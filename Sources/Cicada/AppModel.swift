@@ -1284,7 +1284,11 @@ final class AppModel: ObservableObject {
         // Takes effect from the next meeting: one already running keeps how it listens, except that
         // its audio never goes on to a service other than the one hearing it (`aiServiceChanged`).
         Recognition.serverPreferred = c.transcribes
-        translator.googleOff = c.provider.id == .custom && settings.aiCustomOnly
+        if settings.onlyCustomService && !translator.googleOff,
+           settings.speechServices.soniox || settings.speechServices.elevenLabs {
+            speak.cancelSpeech()
+        }
+        translator.googleOff = settings.onlyCustomService
         ling.reconfigure()
         listen.aiServiceChanged()
         roomListen.aiServiceChanged()

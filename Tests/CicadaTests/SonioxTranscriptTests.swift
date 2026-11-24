@@ -34,12 +34,21 @@ struct SonioxTranscriptTests {
         #expect(line.isFinal && line.text == "Goodbye" && line.translation == nil)
     }
 
-    @Test func externalAudioIsOptInAndSettingsRoundTrip() throws {
-        var choices = SpeechServices()
-        #expect(!choices.soniox && !choices.elevenLabs)
+    @Test @MainActor func savedServicesSurviveReopeningSettings() throws {
+        let suite = "cicada-test-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        #expect(!settings.usesSoniox && !settings.usesElevenLabs)
+        var choices = settings.speechServices
         choices.elevenLabs = true
         choices.voiceID = "voice-from-my-library"
-        let data = try JSONEncoder().encode(choices)
-        #expect(try JSONDecoder().decode(SpeechServices.self, from: data) == choices)
+        settings.speechServices = choices
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.speechServices == choices)
+        #expect(reopened.usesElevenLabs && !reopened.usesSoniox)
+        reopened.aiProvider = "custom"
+        reopened.aiCustomOnly = true
+        #expect(!reopened.usesElevenLabs)
     }
 }

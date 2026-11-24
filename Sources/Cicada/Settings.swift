@@ -9,7 +9,7 @@ enum SourceMode: Equatable {
 /// Persisted user choices. Everything the menu panel and settings sheet edit lives here.
 @MainActor
 final class AppSettings: ObservableObject {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     @Published var sourceMode: SourceMode {
         didSet { save() }
@@ -286,7 +286,8 @@ final class AppSettings: ObservableObject {
 
     var debug: Bool { defaults.bool(forKey: "debug") }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         if let s = defaults.string(forKey: "sourceMode"), s != "auto",
            let lang = sourceLanguages.first(where: { $0.locale == s }) {
             sourceMode = .fixed(lang)

@@ -424,12 +424,17 @@ final class SpeakEngine {
         if keepUnit, echoCancel, let d = echoInput { voiceMic.prepare(input: d) } else if !voiceMic.inUse { voiceMic.release() }
     }
 
-    func teardownAnalyzer() async {
+    func cancelSpeech() {
+        if phase == .listening { pressCancelled() }
         pressID = UUID()
         playbackID = UUID()
-        if phase == .listening { pressCancelled() }
         resetOutput()
         phase = .idle
+        onLive?(.idle, "", "")
+    }
+
+    func teardownAnalyzer() async {
+        cancelSpeech()
         if let input = utterance?.input { Task { await input.cancel() } }
         utterance = nil
         analyzerFormat = nil
