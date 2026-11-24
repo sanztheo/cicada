@@ -26,11 +26,18 @@ struct VoiceSection: View {
             HStack(spacing: 12) {
                 Text("声音").font(.system(size: 13)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 8)
-                chip
+                if settings.usesElevenLabs {
+                    Button(settings.speechServices.voiceName.isEmpty ? settings.speechServices.voiceID : settings.speechServices.voiceName) {
+                        model.settingsSection = .ai
+                    }
+                    playButton(chosen ?? "", highlighted: true, enabled: true) {
+                        model.previewVoice(chosen ?? "", language: roomLanguage)
+                    }
+                } else { chip }
             }
             .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 46)
-            if !ling.usable { keyNudge }
-            if model.voicePickerOpen { picker.padding(.horizontal, 16).padding(.bottom, 14) }
+            if !settings.usesElevenLabs && !ling.usable { keyNudge }
+            if !settings.usesElevenLabs && model.voicePickerOpen { picker.padding(.horizontal, 16).padding(.bottom, 14) }
         }
         .sheet(isPresented: $recording) {
             VoiceCloneSheet(model: model, settings: settings, language: language) { saved in

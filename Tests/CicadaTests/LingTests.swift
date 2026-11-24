@@ -227,6 +227,22 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         #expect(try String(contentsOf: file, encoding: .utf8) == "sk-abc1234567890")
     }
 
+    @Test func independentSpeechKeysSurviveRestartAndRemoval() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for service in ["soniox", "elevenlabs"] {
+            #expect(AIKey.save("test-" + service, service))
+            let file = folder.appendingPathComponent("ai-key-" + service)
+            #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int == 0o600)
+            #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        }
+        AIKey.folderOverride = folder
+        #expect(AIKey.read("soniox") == "test-soniox")
+        AIKey.remove("soniox")
+        AIKey.folderOverride = folder
+        #expect(AIKey.read("soniox") == nil)
+        #expect(AIKey.read("elevenlabs") == "test-elevenlabs")
+    }
+
     @Test func keyIsNotInUserDefaults() {
         let key = "sk-not-in-defaults-\(UUID().uuidString)"
         AIKey.save(key)

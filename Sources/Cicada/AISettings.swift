@@ -23,7 +23,10 @@ struct AISettingsView: View {
     @State private var open: Set<String> = []
 
     var body: some View {
-        if provider.id == .custom { customPage } else { servicePage }
+        VStack(alignment: .leading, spacing: 16) {
+            if provider.id == .custom { customPage } else { servicePage }
+            SpeechServiceSettingsView(model: model, settings: settings)
+        }
     }
 
     private var servicePage: some View {
@@ -62,9 +65,13 @@ struct AISettingsView: View {
             SettingsCard {
                 textSection
                 Divider()
-                voiceSection
+                if settings.usesElevenLabs {
+                    usageRow(L("同传声音"), tag: "ElevenLabs", style: .ok, note: settings.speechServices.voiceModel)
+                } else { voiceSection }
                 Divider()
-                hearSection
+                if settings.usesSoniox {
+                    usageRow(L("语音识别"), tag: "Soniox", style: .ok, note: settings.speechServices.sonioxModel)
+                } else { hearSection }
             }
             SettingsCard { onlyRow }
             HStack(spacing: 6) {
@@ -724,7 +731,9 @@ struct AISettingsView: View {
             usageRow(L("实时纪要"), tag: notesOn ? uses : ling.hasKey ? L("暂不可用") : L("需要 key"), style: notesOn ? .ok : .off,
                      note: notesOn ? L("会中每 45 秒更新") : reason == .noJSON ? L("这个服务不支持 JSON") : reason == .noModel ? L("换一个模型后可用") : later)
         }
-        if Recognition.cloudOnly {
+        if settings.usesSoniox && settings.speechServices.directTranslation {
+            usageRow(L("翻译"), tag: "Soniox", style: .ok, note: L("识别和翻译一步完成"))
+        } else if Recognition.cloudOnly && !settings.usesSoniox {
             usageRow(L("翻译"), tag: textOn ? uses : ling.hasKey ? L("暂不可用") : L("需要 key"), style: textOn ? .ok : .off,
                      note: textOn ? L("随语音识别一步翻出；不行时换 Google") : later)
         } else if !textOn, model.translationHealth.googleDown {
@@ -741,14 +750,20 @@ struct AISettingsView: View {
                      note: fixOn ? L("随翻译一起发，几乎不多花") : textOn ? L("在“词表”里打开") : later)
         }
         let speaks = ling.speaks && !down
-        usageRow(L("同传声音"), tag: speaks ? uses : L("本机"), style: speaks ? .ok : .off, note: voiceNote(down: down))
+        if settings.usesElevenLabs {
+            usageRow(L("同传声音"), tag: "ElevenLabs", style: .ok, note: settings.speechServices.voiceModel)
+        } else {
+            usageRow(L("同传声音"), tag: speaks ? uses : L("本机"), style: speaks ? .ok : .off, note: voiceNote(down: down))
+        }
         if provider.clones {
             usageRow(L("你自己的声音"), tag: on ? uses : ling.hasKey ? L("暂不可用") : L("需要 key"), style: on ? .ok : .off,
                      note: on ? L("录一段，让对方听到你的音色") : later)
         } else {
             usageRow(L("你自己的声音"), tag: L("只有 Ling"), style: .ling, note: L("换用 Ling 才有"))
         }
-        if Recognition.cloudOnly {
+        if settings.usesSoniox {
+            usageRow(L("语音识别"), tag: "Soniox", style: .ok, note: settings.speechServices.sonioxModel, divider: false)
+        } else if Recognition.cloudOnly {
             if provider.hearsAudio {
                 usageRow(L("语音识别"), tag: on ? uses : ling.hasKey ? L("暂不可用") : L("需要 key"), style: on ? .ok : .off,
                          note: on ? L("识别和翻译一步完成") : later, divider: false)
@@ -813,6 +828,7 @@ struct AISettingsView: View {
     }
 
     private var footnote: String {
+        if settings.usesSoniox || settings.usesElevenLabs { return L("费用以这个服务为准。") }
         if Recognition.cloudOnly, provider.id != .custom {
             return L("一小时会议约 ¥0.15–1（目前优惠价）。说话的声音分段发给 Ling 识别和翻译；会议录音和文字记录只存在这台 Mac 上。")
         }

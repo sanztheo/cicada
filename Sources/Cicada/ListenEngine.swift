@@ -37,6 +37,7 @@ final class ListenEngine {
     // Outputs
     var onSubtitle: ((_ source: String, _ translation: String) -> Void)?
     var onStatus: ((String) -> Void)?
+    var onServiceStopped: (() -> Void)?
     var onStateChange: (() -> Void)?
     /// A finished sentence; `secondsAgo` ≈ how long ago it started.
     var onFinal: ((Segment, _ secondsAgo: Double) -> Void)?
@@ -117,6 +118,7 @@ final class ListenEngine {
     /// The service that can hear audio (Ling's Ming, or a custom service's speech model); nil when
     /// there is none.
     var cloudService: String? {
+        if settings.usesSoniox { return "Soniox" }
         guard let ling = translator?.ling, ling.hearsAudio || ling.transcribes else { return nil }
         return ling.config().provider.name
     }
@@ -300,7 +302,7 @@ final class ListenEngine {
     /// background, one at a time (each one's end refreshes the list and asks for the next).
     private func fetchSecondModel(besides starting: Lang? = nil) {
         // The service hears every language (`cloudOnly`): a "download" would only restart it.
-        guard !Recognition.cloudOnly, sourceMode == .auto, fetchingModel == nil, candidates.count < 2 else { return }
+        guard !settings.usesSoniox, !Recognition.cloudOnly, sourceMode == .auto, fetchingModel == nil, candidates.count < 2 else { return }
         let last = UserDefaults.standard.string(forKey: "lastDetected")
         // The model being started is fetched by `ensureModel` already. At a start that is `starting`:
         // `activeLang` is still the last run's then, and may be a model since taken away.
@@ -357,11 +359,11 @@ final class ListenEngine {
 
     func start() {
         guard !isRunning else { return }
-        guard Recognition.isAvailable else {
+        guard settings.usesSoniox || Recognition.isAvailable else {
             setStatus(L("此 Mac 不支持本机语音识别"))
             return
         }
-        guard !Recognition.authorizationDenied else {
+        guard settings.usesSoniox || !Recognition.authorizationDenied else {
             setStatus(Recognition.notAllowed.localizedDescription)
             return
         }
@@ -630,7 +632,8 @@ final class ListenEngine {
     func sourceModeChanged() {
         detection.modeChanged()
         updateHold()
-        if isRunning, case .fixed(let lang) = sourceMode {
+        if recognizer is SonioxStream { restartSoniox() }
+        else if isRunning, case .fixed(let lang) = sourceMode {
             // Chosen by hand: what was held back in that language is now confirmed.
             if lang == activeLang { flushUnconfirmed() }
             Task { await switchTranscriber(to: lang) }
@@ -639,8 +642,16 @@ final class ListenEngine {
         onStateChange?()
     }
 
+    private var directSoniox: Bool { recognizer is SonioxStream && settings.speechServices.directTranslation }
+
+    func restartSoniox() {
+        guard isRunning, recognizer is SonioxStream else { return }
+        cloud = nil
+        startCloud()
+    }
+
     func targetChanged() {
-        retranslateVisible()
+        if directSoniox { restartSoniox() } else { retranslateVisible() }
         onStateChange?()
     }
 
@@ -677,7 +688,7 @@ final class ListenEngine {
     private func switchTranscriber(to lang: Lang, replaySeconds: Double = 0) async {
         // No models to switch between: the service hears every language, and a language picked in
         // settings only becomes its hint (`cloudHint`).
-        if Recognition.cloudOnly || serverHears {
+        if settings.usesSoniox || Recognition.cloudOnly || serverHears {
             guard isRunning else { return }
             if case .fixed = sourceMode { activeLang = lang } else if activeLang == nil { activeLang = lang }
             if !cloudListening { startCloud() }
@@ -815,7 +826,7 @@ final class ListenEngine {
         if !text.isEmpty { lastWordsAt = Date(); onWords?() }
         if result.isFinal {
             text = HeardText.clean(text)
-            let fuller = HeardText.fuller(final: text, draft: sentenceCutHead ?? volatileText)
+            let fuller = recognizer is SonioxStream ? text : HeardText.fuller(final: text, draft: sentenceCutHead ?? volatileText)
             let splitAt = pendingSplit
             pendingSplit = nil
             sentenceCutHead = nil
@@ -849,15 +860,16 @@ final class ListenEngine {
             let conf = result.confidence ?? 1
             // Heard by the service: its translation came with the line. Not when it was asked for the
             // language the line turned out to be in (the target follows it): that one is translated again.
-            let given = translationOff() || result.translation == text && result.language != resolvedTarget ? nil : result.translation
-            let provisional = given ?? (volatileTranslation.isEmpty ? nil : volatileTranslation)
+            let wrongTarget = result.translationLanguage.map { $0 != VoiceCatalog.key(for: resolvedTarget) } ?? false
+            let given = translationOff() || wrongTarget || result.translation == text && result.language != resolvedTarget ? nil : result.translation
+            let provisional = recognizer is SonioxStream ? given : given ?? (volatileTranslation.isEmpty ? nil : volatileTranslation)
             var seg = Segment(id: nextSegmentID, text: text, sourceCode: result.language ?? activeLang?.code ?? "auto",
                               translation: provisional)
             seg.start = start
             seg.end = end
             seg.clock = gen
             seg.cut = cutAsked
-            seg.split = splitAt != nil
+            seg.split = splitAt != nil || recognizer is SonioxStream
             cutAsked = false
             seg.refining = refiner != nil
             if refiner != nil { settled(refiner!.emitted(id: seg.id, start: seg.start, end: seg.end, text: seg.text)) }
@@ -908,6 +920,11 @@ final class ListenEngine {
             // A sentence just ended: remember where, until words past it come to end the line there.
             if HeardText.endsSentence(text) { volatileSentence = (text, result.end) }
             volatileText = text
+            if directSoniox {
+                let target = settings.resolvedTarget(source: result.language)
+                volatileTranslation = !translationOff() && result.translationLanguage == VoiceCatalog.key(for: target)
+                    ? result.translation ?? "" : ""
+            }
             noteBoundaries(at: result.end)
             checkForeignLetters(text)
         }
@@ -1171,10 +1188,10 @@ final class ListenEngine {
     /// 先用○○听: the service hears the meeting until the model being downloaded is on the Mac.
     func startCloud() {
         guard isRunning, !cloudListening, cloudService != nil, let translator else { return }
-        let awaiting = downloading?.lang ?? modelProblem?.lang
+        let awaiting = settings.usesSoniox ? nil : downloading?.lang ?? modelProblem?.lang
         debugLog("cloud: on (\(cloudService ?? "?")), replacing \(recognizer == nil ? "nothing" : activeLang?.locale ?? "?"), awaiting \(awaiting?.locale ?? "none")")
         // Held lines were a model's guesses at a language it may not know: the held audio goes to the service instead.
-        let replay = languageConfirmed && recognizer != nil ? 0 : 30.0
+        let replay = recognizer is SonioxStream || (languageConfirmed && recognizer != nil) ? 0 : 30.0
         let replaced = (lang: activeLang, confirmed: languageConfirmed)
         // The analyzer's format keeps the audio held for it replayable.
         let format = recognizer?.format
@@ -1199,6 +1216,19 @@ final class ListenEngine {
         lastVolatileSent = ""
         detection.clearMismatch()
         modelProblem = nil
+        if settings.usesSoniox {
+            do {
+                let direct = settings.speechServices.directTranslation && !translationOff()
+                let other = settings.target == "system" ? settings.resolvedTarget(source: settings.myLanguage) : nil
+                let stream = try translator.ling.sonioxStream(settings: settings.speechServices, hint: cloudHint,
+                    target: direct ? settings.myLanguage : nil, otherLanguage: other, priority: .translate)
+                attachCloud(stream, generation: gen, replay: replay)
+            } catch {
+                onServiceStopped?()
+                setStatus(L("请检查 Soniox 密钥和模型后重新开始"))
+            }
+            return
+        }
         let stream = CloudStream(format: format) { [weak self] wav, seconds in
             guard let self, gen == self.generation else { return nil }
             do {
@@ -1234,12 +1264,20 @@ final class ListenEngine {
                 return nil
             }
         }
+        attachCloud(stream, generation: gen, replay: replay)
+    }
+
+    private func attachCloud(_ stream: RecognitionStream, generation gen: Int, replay: Double) {
         router.attach(stream, replaySeconds: replay)
         recognizer = stream
         resultsTask = Task { [weak self] in
             do {
                 for try await piece in stream.results { self?.handle(piece, generation: gen) }
             } catch {
+                if stream is SonioxStream, let self, self.generation == gen {
+                    self.onServiceStopped?()
+                    self.setStatus(L("请检查 Soniox 密钥和模型后重新开始"))
+                }
                 debugLog("cloud: stream ended: \(error)")
             }
         }
@@ -1264,6 +1302,10 @@ final class ListenEngine {
     /// it went to: another service (Ling chosen instead of a custom one), or 语音识别 set back to
     /// 本机, takes the meeting back to this Mac rather than sending its audio to a service nobody chose.
     func aiServiceChanged() {
+        if recognizer is SonioxStream {
+            if !settings.usesSoniox { onServiceStopped?() }
+            return
+        }
         guard let via = cloud?.via else { return }
         let provider = translator?.ling.provider.id
         guard provider != via.provider || (via.server && !Recognition.serverPreferred) else { return }
@@ -1387,7 +1429,7 @@ final class ListenEngine {
     }
 
     private func translateSegment(id: Int, retry: Int = 0, again: Segment? = nil) {
-        guard !translationOff(), let seg = again ?? segments.first(where: { $0.id == id }) else { return }
+        guard !directSoniox, !translationOff(), let seg = again ?? segments.first(where: { $0.id == id }) else { return }
         let trace = TranslateTrace()
         let asked = Date()
         // The target follows the detected language; log the one this call used, not the one after.
@@ -1526,7 +1568,7 @@ final class ListenEngine {
     /// line in progress is ended where a sentence ends, at the next small pause (a dip in the
     /// sound), at a clause, past a cap between words, or when no new words come for a moment.
     private func maybeCutSentence() {
-        guard isRunning, !cutting, let recognizer, !volatileText.isEmpty, volatileText != lastCut,
+        guard isRunning, !(recognizer is SonioxStream), !cutting, let recognizer, !volatileText.isEmpty, volatileText != lastCut,
               (pendingSplit == nil && !cutAsked) || Date().timeIntervalSince(cutAskedAt) > 2 else { return }
         let cjk = joiner(for: activeLang?.code ?? "") == ""
         let long = cjk ? volatileText.count >= 24 : volatileText.split(separator: " ").count >= 10
@@ -1591,7 +1633,7 @@ final class ListenEngine {
 
     private func translateVolatile() {
         let text = shownDraft
-        guard isRunning, !translationOff(), !volatileInFlight, text.count >= 2, text != lastVolatileSent else { return }
+        guard !directSoniox, isRunning, !translationOff(), !volatileInFlight, text.count >= 2, text != lastVolatileSent else { return }
         let epoch = volatileEpoch
         let source = activeLang?.code ?? "auto"
         lastVolatileSent = text

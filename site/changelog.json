@@ -7,6 +7,12 @@
     "image": null,
     "items": [
       {
+        "kind": "new",
+        "platforms": ["mac"],
+        "title": "Mac 可单独选用 Soniox 实时识别和 ElevenLabs 声音。",
+        "text": "在 AI 服务中保存各自的 key。Soniox 可直接翻译，也可交给已选文字模型；松开说话键后，译文通过虚拟麦克风播放。"
+      },
+      {
         "kind": "improved",
         "platforms": [
           "mac"

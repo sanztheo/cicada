@@ -164,6 +164,12 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    @Published var speechServices: SpeechServices { didSet { save() } }
+
+    var onlyCustomService: Bool { provider.id == .custom && aiCustomOnly }
+    var usesSoniox: Bool { speechServices.soniox && !onlyCustomService }
+    var usesElevenLabs: Bool { speechServices.elevenLabs && !onlyCustomService }
+
     var provider: AIProvider { AIProvider.named(aiProvider) }
 
     /// What `LingClient` calls with: the service, its address and models.
@@ -312,6 +318,9 @@ final class AppSettings: ObservableObject {
         toggleKey = Shortcut(stored: defaults.string(forKey: "toggleKey")) ?? .defaultToggle
         aiModel = defaults.string(forKey: "aiModel") ?? "Ling-3.1-flash"
         aiProvider = defaults.string(forKey: "aiProvider") ?? "ling"
+        speechServices = defaults.data(forKey: "speechServices").flatMap {
+            try? JSONDecoder().decode(SpeechServices.self, from: $0)
+        } ?? SpeechServices()
         aiModels = defaults.dictionary(forKey: "aiModels") as? [String: String] ?? [:]
         aiVoiceModels = defaults.dictionary(forKey: "aiVoiceModels") as? [String: String] ?? [:]
         aiCustomBase = defaults.string(forKey: "aiCustomBase") ?? ""
@@ -377,6 +386,7 @@ final class AppSettings: ObservableObject {
         defaults.set(toggleKey.stored, forKey: "toggleKey")
         defaults.set(aiModel, forKey: "aiModel")
         defaults.set(aiProvider, forKey: "aiProvider")
+        defaults.set(try? JSONEncoder().encode(speechServices), forKey: "speechServices")
         defaults.set(aiModels, forKey: "aiModels")
         defaults.set(aiVoiceModels, forKey: "aiVoiceModels")
         defaults.set(aiCustomBase, forKey: "aiCustomBase")

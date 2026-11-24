@@ -76,6 +76,7 @@ enum Recognition {
         /// Heard by the service (`CloudStream`): the language it says was spoken, and its translation.
         var language: String? = nil
         var translation: String? = nil
+        var translationLanguage: String? = nil
     }
 
     /// A few characters of a finished sentence and when they were said, from the meeting record's

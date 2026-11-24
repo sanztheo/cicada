@@ -239,10 +239,15 @@ final class AppModel: ObservableObject {
             self?.status = text
             self?.overlay.setStatus(text)
         }
+        listen.onServiceStopped = { [weak self] in self?.stop() }
+        roomListen.onServiceStopped = { [weak self] in self?.stop() }
         listen.onStateChange = { [weak self] in self?.refresh() }
         listen.onFinal = { [weak self] seg, duration in self?.heardOnline(seg, duration: duration) }
         roomListen.onFinal = { [weak self] seg, duration in self?.heardInRoom(seg, duration: duration) }
-        roomListen.onStatus = { debugLog("room engine: \($0)") }
+        roomListen.onStatus = { [weak self] text in
+            if self?.settings.usesSoniox == true && self?.listen.isRunning == false { self?.status = text }
+            debugLog("room engine: \(text)")
+        }
         speakers.onVoice = { [weak self] line, voice in
             guard let self else { return }
             self.store.setVoice(lineID: line, voice)
@@ -370,6 +375,11 @@ final class AppModel: ObservableObject {
 
         speak.translate = { [weak self] text, from, to, trace in
             await self?.listen.translate(text, source: from, target: to, kind: .speak, trace: trace)
+        }
+        speak.startSoniox = { [weak self] source, target in
+            guard let self, self.settings.usesSoniox else { throw LingClient.Failure.noKey }
+            return try self.ling.sonioxStream(settings: self.settings.speechServices, hint: source, target: target,
+                                              otherLanguage: nil, priority: .speak)
         }
         speak.interpret = { [weak self] wav, from, to, trace in
             await self?.translator.interpret(wav: wav, source: from, target: to, trace: trace)
@@ -552,7 +562,7 @@ final class AppModel: ObservableObject {
         let access = systemAudio.next(status: SystemAudioPermission.status(),
                                       tapRan: listen.isRunning && !settings.listensToRoom)
         if access != systemAudio { systemAudio = access }
-        let speech = Recognition.ready
+        let speech = settings.usesSoniox || Recognition.ready
         if speech != speechOK { speechOK = speech }
         refreshMicUsers()
         refreshSystemMic()
@@ -874,7 +884,10 @@ final class AppModel: ObservableObject {
     func setSubtitles(_ mode: String, meetingOnly: Bool = false) {
         let wasOff = subtitles == "original"
         if meetingOnly { meetingSubtitles = mode } else { settings.subtitles = mode; meetingSubtitles = nil }
-        if wasOff && subtitles != "original" { listen.translationResumed() }
+        if wasOff != (subtitles == "original"), settings.usesSoniox && settings.speechServices.directTranslation {
+            listen.restartSoniox()
+            roomListen.restartSoniox()
+        } else if wasOff && subtitles != "original" { listen.translationResumed() }
         debugLog("subtitles=\(subtitles) meetingOnly=\(meetingOnly)")
         objectWillChange.send()
     }
@@ -1079,6 +1092,7 @@ final class AppModel: ObservableObject {
         set {
             settings.target = newValue
             listen.targetChanged()
+            roomListen.targetChanged()
             refresh()
             objectWillChange.send()
         }
@@ -1196,6 +1210,7 @@ final class AppModel: ObservableObject {
     /// Mac's). A choice the service in use cannot speak (Ming after switching to OpenRouter, the
     /// user's own voice without Ling) falls back to the default, and comes back with that service.
     func voiceID(for language: String) -> String? {
+        if settings.usesElevenLabs { return "elevenlabs:" + settings.speechServices.voiceID }
         let fallback = VoiceCatalog.defaultID(for: language, hasKey: ling.speaks)
         guard let id = settings.speakVoices[VoiceCatalog.key(for: language)] else { return fallback }
         if id.hasPrefix("system:") { return id }
@@ -1262,6 +1277,7 @@ final class AppModel: ObservableObject {
             VoiceCatalog.service = c.hasVoices ? .cloud(label: label, voices: c.voices) : .none
         }
         speak.streamName = { [weak self] in
+            if self?.settings.usesElevenLabs == true { return "ElevenLabs" }
             guard let id = self?.settings.provider.id, id != .ling else { return "ming" }
             return id.rawValue
         }
@@ -1273,6 +1289,7 @@ final class AppModel: ObservableObject {
         listen.aiServiceChanged()
         roomListen.aiServiceChanged()
         applyVoice()
+        if settings.speakEnabled { Task { await speak.prepare() } }
     }
 
     func setVoice(_ id: String, for language: String) {
@@ -1281,6 +1298,10 @@ final class AppModel: ObservableObject {
 
     /// Ming's voices need a working key; without one the Mac's voice speaks.
     func voiceRoute(id: String?, language: String) -> SpeakEngine.VoiceRoute {
+        if settings.usesElevenLabs {
+            let service = settings.speechServices
+            return .stream { [ling] text in ling.elevenSpeech(text, settings: service) }
+        }
         guard let id else { return .system(nil) }
         if id.hasPrefix("system:") { return .system(String(id.dropFirst("system:".count))) }
         guard ling.speaks else { return .system(nil) }

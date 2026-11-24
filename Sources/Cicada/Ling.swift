@@ -1045,6 +1045,12 @@ final class LingClient: ObservableObject {
         return g
     }
 
+    #if !CICADA_IOS
+    func waitForSpeechService(_ priority: Priority, url: URL) async {
+        await acquire(priority, gate: gate(url))
+    }
+    #endif
+
     /// Waits for this request's turn to start. `ticket` is a retry's first one, which keeps its
     /// place ahead of requests queued after it. Returns the ticket.
     @discardableResult

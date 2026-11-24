@@ -1694,7 +1694,7 @@ struct LanguageNotice: View {
     var body: some View {
         if let service = model.cloud.back {
             cloudBackCard(service)
-        } else if model.cloud.listening, !Recognition.cloudOnly, let service = model.cloud.service {
+        } else if model.cloud.listening, !model.settings.usesSoniox, !Recognition.cloudOnly, let service = model.cloud.service {
             cloudCard(service)
         } else if let problem = model.modelProblem, !model.languageAsk.isEmpty || model.modelBlocked {
             problemCard(problem)

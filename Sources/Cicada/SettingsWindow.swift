@@ -646,6 +646,7 @@ struct SettingsView: View {
     /// The last measured press, else what to expect.
     private var latencyLine: String {
         guard let v = model.lastSpeakLatency else {
+            if settings.usesSoniox || settings.usesElevenLabs { return L("松开发言键后播放译文") }
             // Measured with 试一句: Ming's voice ~3 s after release, the Mac's ~1 s.
             let mac = model.voiceID(for: model.speak.targetCode)?.hasPrefix("system:") ?? true
             return mac ? L("按住说话，松开后约 1 秒，对方听到译文") : L("按住说话，松开后约 3 秒，对方听到译文")

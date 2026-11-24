@@ -8,10 +8,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ARCH="${ARCH:-$(uname -m)}"
-swift build -c release --arch "$ARCH" --product Cicada
-swift build -c release --product CicadaIcon
-BIN=$(swift build -c release --arch "$ARCH" --show-bin-path)
-HOST_BIN=$(swift build -c release --show-bin-path)
+scripts/mac-swift.sh build -c release --arch "$ARCH" --product Cicada
+scripts/mac-swift.sh build -c release --product CicadaIcon
+BIN=$(scripts/mac-swift.sh build -c release --arch "$ARCH" --show-bin-path)
+HOST_BIN=$(scripts/mac-swift.sh build -c release --show-bin-path)
 
 APP=build/Cicada.app
 ICONSET=build/AppIcon.iconset

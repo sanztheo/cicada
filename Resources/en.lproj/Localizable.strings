@@ -1654,3 +1654,22 @@
 
 /* iOS: playback */
 "播放进度" = "Playback position";
+
+/* Live speech services */
+"实时语音服务" = "Live speech services";
+"用 Soniox 识别会议和按键发言" = "Use Soniox for meetings and push-to-talk";
+"用 ElevenLabs 朗读译文" = "Speak translations with ElevenLabs";
+"获取声音" = "Load voices";
+"仅使用自定义服务时，外部语音服务已停用" = "External speech services are off in custom-service-only mode.";
+"结束聆听和发言后可修改" = "Finish listening and speaking to change these settings.";
+"打开后，音频发给 Soniox，朗读的译文发给 ElevenLabs。各项可单独启用。" = "Soniox receives audio. ElevenLabs receives translated text. Enable each separately.";
+"请先保存对应的 API key" = "Save the corresponding API key first.";
+"没有可用的声音" = "No voices available.";
+"获取声音失败，可填写 Voice ID" = "Could not load voices. You can enter a voice ID.";
+"请填写模型和所选声音的 ID" = "Enter the model and the selected voice ID.";
+"设置已保存" = "Settings saved.";
+"已保存密钥" = "Key saved";
+"密钥保存失败" = "Could not save key.";
+"请检查 Soniox 密钥和模型后重新开始" = "Check your Soniox connection, key and model, then try again.";
+"ElevenLabs 无法播放，请检查密钥、模型和声音" = "ElevenLabs could not play the translation. Check the key, model and voice.";
+"松开发言键后播放译文" = "Translations play after you release the talk key.";

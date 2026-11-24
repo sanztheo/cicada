@@ -28,7 +28,7 @@ def specs(s):
 
 def code_keys():
     out = tempfile.mkdtemp()
-    subprocess.run(["swift", "build", "--product", "Cicada", "-Xswiftc", "-emit-localized-strings",
+    subprocess.run([os.path.join(ROOT, "scripts/mac-swift.sh"), "build", "--product", "Cicada", "-Xswiftc", "-emit-localized-strings",
                     "-Xswiftc", "-emit-localized-strings-path", "-Xswiftc", out],
                    cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
     # The iOS app's text shares the same tables (ios/AGENTS.md); it needs Xcode's iOS SDK.

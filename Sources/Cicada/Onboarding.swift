@@ -566,7 +566,7 @@ struct OnboardingView: View {
                     }
                 }
             } }
-            Label(Recognition.cloudOnly ? L("会议录音和文字记录只存在这台 Mac 上") : L("声音只在本机识别"), systemImage: "lock")
+            Label(Recognition.cloudOnly || model.settings.usesSoniox ? L("会议录音和文字记录只存在这台 Mac 上") : L("声音只在本机识别"), systemImage: "lock")
                 .font(.system(size: 12)).foregroundStyle(Palette.secondary)
         }
     }
