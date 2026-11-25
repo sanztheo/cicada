@@ -77,7 +77,7 @@ final class SpeakEngine {
 
     var onLive: ((_ phase: Phase, _ source: String, _ translation: String) -> Void)?
     /// A finished utterance for the meeting record.
-    var onUtterance: ((_ source: String, _ translation: String, _ from: String, _ to: String, _ secondsAgo: Double) -> Void)?
+    var onUtterance: ((_ source: String, _ translation: String?, _ from: String, _ to: String, _ secondsAgo: Double) -> Void)?
     var onStatus: ((String) -> Void)?
     /// Why a press of the talk key went nowhere: shown while the key is held.
     var onNotice: ((String) -> Void)?
@@ -370,9 +370,7 @@ final class SpeakEngine {
     }
 
     var targetCode: String {
-        if settings.speakTo != "room" { return settings.speakTo }
-        let room = roomLanguage?() ?? "en"
-        return room == settings.speakFromLang.code ? "en" : room
+        settings.resolvedSpeakTarget(roomLanguage: roomLanguage?())
     }
 
     /// Debug: the device the mic engine reads.
@@ -447,7 +445,7 @@ final class SpeakEngine {
     private struct PressText {
         var original = ""
         var translation: String?
-        var failed = false
+        var failureMessage: String?
     }
     private var utterance: (input: RecognitionStream, text: Task<PressText, Never>, direct: Bool, source: String, target: String)?
 
@@ -463,11 +461,13 @@ final class SpeakEngine {
         let direct = settings.usesSoniox && settings.speechServices.directTranslation
         let stream: RecognitionStream
         if settings.usesSoniox {
-            guard let startSoniox, let remote = try? startSoniox(lang.code, direct ? target : nil) else {
-                onNotice?(L("请检查 Soniox 密钥和模型后重新开始"))
+            do {
+                guard let startSoniox else { throw LingClient.Failure.noKey }
+                stream = try startSoniox(lang.code, direct ? target : nil)
+            } catch {
+                onNotice?(SonioxStream.failureMessage(for: error))
                 return nil
             }
-            stream = remote
         } else {
             stream = Recognition.startNow(lang.locale, drafts: true, format: format)
         }
@@ -483,7 +483,7 @@ final class SpeakEngine {
             var lastDraft = ""
             do {
                 for try await piece in stream.results {
-                    guard let self, self.pressID == id else { return PressText(failed: true) }
+                    guard let self, self.pressID == id else { return PressText() }
                     self.handle(piece)
                     lastDraft = piece.isFinal ? "" : piece.text
                     if piece.isFinal {
@@ -494,7 +494,7 @@ final class SpeakEngine {
                     }
                 }
             } catch {
-                if stream is SonioxStream { return PressText(failed: true) }
+                if stream is SonioxStream { return PressText(failureMessage: SonioxStream.failureMessage(for: error)) }
             }
             if !(stream is SonioxStream), !lastDraft.isEmpty { originals.append(lastDraft) }
             let original = originals.joined(separator: joiner(for: lang.code)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -592,7 +592,10 @@ final class SpeakEngine {
                   (try? file.read(into: buf)) != nil, buf.frameLength > 0 else { break }
             buffers.append(buf)
         }
-        Task { await speakBuffers(buffers) }
+        Task {
+            await prepare()
+            await speakBuffers(buffers)
+        }
     }
 
     /// Feeds recorded audio in real time, as if someone said it into the mic, then "releases the
@@ -801,9 +804,9 @@ final class SpeakEngine {
         Task {
             let transcript = await u.text.value
             guard id == pressID else { probe?.finish(); return }
-            if transcript.failed {
+            if let message = transcript.failureMessage {
                 phase = .idle
-                onLive?(.idle, "", L("请检查 Soniox 密钥和模型后重新开始"))
+                onLive?(.idle, "", message)
                 probe?.finish()
                 return
             }
@@ -826,7 +829,8 @@ final class SpeakEngine {
             }
             if !text.isEmpty { onLive?(.translating, text, "") }
             let heard = await (early ?? startMing()).value
-            debugLog("speak: on-device heard \(text.count) chars, Ming \(heard.map { "\($0.original.count)" } ?? "-") chars")
+            let recognizer = u.input is SonioxStream ? "Soniox" : "on-device"
+            debugLog("speak: \(recognizer) heard \(text.count) chars, Ming \(heard.map { "\($0.original.count)" } ?? "-") chars")
             if let heard { text = heard.original }
             // Hands-free: a word or two is a noise Ming named (喂, 咳咳; the talk key is there for 好的),
             // and the meeting's own words are its echo.
@@ -854,9 +858,16 @@ final class SpeakEngine {
             onLive?(.translating, text, "")
             // Never speak the untranslated original into the room: if translation
             // fails, say so on the bar and send nothing.
+            guard from != to else {
+                if probe == nil { onUtterance?(text, nil, from, to, Date().timeIntervalSince(pressStarted)) }
+                phase = .idle
+                onLive?(.idle, "", "")
+                probe?.finish()
+                return
+            }
             let result: String?
             if u.direct {
-                result = transcript.translation.flatMap { $0 != text && from != to ? $0 : nil }
+                result = transcript.translation
                 if result != nil { trace.attempts.append(.init(provider: "soniox", seconds: 0, failure: nil)) }
             } else if let heard {
                 result = heard.translation
@@ -875,28 +886,30 @@ final class SpeakEngine {
                                failed: trace.failedSeconds, via: result == nil ? "none" : trace.via, fallbacks: trace.fallbacks,
                                firstAudio: firstAudio)
             }
-            guard let translated = result, from != to,
-                  translated.caseInsensitiveCompare(text) != .orderedSame else {
+            guard id == pressID else { probe?.finish(); return }
+            let translation = result.flatMap { !$0.isEmpty && $0.caseInsensitiveCompare(text) != .orderedSame ? $0 : nil }
+            if probe == nil { onUtterance?(text, translation, from, to, Date().timeIntervalSince(pressStarted)) }
+            guard let translated = translation else {
                 debugLog("speak: translation failed, nothing sent")
                 if probe == nil { onTiming?(timing(voice: nil)) }
                 phase = .idle
-                onLive?(.idle, text, L("这句没翻译成 · 没有说出去"))
+                onLive?(.idle, "", "")
+                onNotice?(L("这句没翻译成 · 没有说出去"))
                 probe?.finish()
                 return
             }
             // The virtual mic went away during the press: no voice at all rather than the speakers.
-            guard id == pressID else { probe?.finish(); return }
             guard outputDevice() != nil else {
                 debugLog("speak: no virtual mic, nothing sent")
                 if probe == nil { onTiming?(timing(voice: nil)) }
                 phase = .idle
-                onLive?(.idle, text, L("没有虚拟麦克风 · 没有说出去"))
+                onLive?(.idle, "", "")
+                onNotice?(L("没有虚拟麦克风 · 没有说出去"))
                 probe?.finish()
                 return
             }
             contentLog("SPEAK [\(from)→\(to)] via=\(trace.via) \(text) => \(translated)")
             debugLog("speak: via=\(trace.via) recognize \(String(format: "%.2f", textAt.timeIntervalSince(released))) s translate \(String(format: "%.2f", translatedAt.timeIntervalSince(textAt))) s fallbacks=\(trace.fallbacks)")
-            if probe == nil { onUtterance?(text, translated, from, to, Date().timeIntervalSince(pressStarted)) }
             phase = .speaking
             onLive?(.speaking, text, translated)
             await speak(translated, language: to, route: route)

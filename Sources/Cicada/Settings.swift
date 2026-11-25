@@ -44,7 +44,7 @@ final class AppSettings: ObservableObject {
     @Published var speakFrom: String {
         didSet { save() }
     }
-    /// "room" (follow the detected room language) or a translation code.
+    /// "room", "subtitles", or a fixed translation code.
     @Published var speakTo: String {
         didSet { save() }
     }
@@ -100,7 +100,7 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
-    /// What shows while listening: "notes" (live notes window, default), "bar" (subtitle bar), "none".
+    /// What shows while listening: "notes" (default), "bar", "none", or "chat".
     @Published var displayMode: String {
         didSet { save() }
     }
@@ -421,6 +421,18 @@ final class AppSettings: ObservableObject {
     /// language when they speak mine.
     func resolvedTarget(source: String?) -> String {
         target == "system" ? followSystemTarget(source: source, systemLanguages: Locale.preferredLanguages) : target
+    }
+
+    func resolvedSpeakTarget(roomLanguage: String?) -> String {
+        switch speakTo {
+        case "subtitles":
+            return resolvedTarget(source: roomLanguage)
+        case "room":
+            guard let roomLanguage, roomLanguage != speakFromLang.code else { return "en" }
+            return roomLanguage
+        default:
+            return speakTo
+        }
     }
 
     /// The reader's own language: the translate-to choice, or with "follow system" the one

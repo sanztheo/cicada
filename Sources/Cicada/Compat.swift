@@ -60,13 +60,12 @@ extension View {
             self
         } else {
             coordinateSpace(name: LegacyScrollEdge.space)
-                .background(GeometryReader { g in
-                    Color.clear.preference(key: LegacyScrollEdge.Container.self, value: g.size.height)
-                })
-                .onPreferenceChange(LegacyScrollEdge.Container.self) { LegacyScrollEdge.container = $0 }
-                // The lazy stack doesn't draw a marker scrolled far out of view: that's far from the bottom.
-                .onPreferenceChange(LegacyScrollEdge.Bottom.self) { y in
-                    action(y < 0 ? .greatestFiniteMagnitude : y - LegacyScrollEdge.container)
+                .backgroundPreferenceValue(LegacyScrollEdge.Bottom.self) { bottom in
+                    GeometryReader { viewport in
+                        // Each open transcript has its own viewport. An unmounted marker is far away.
+                        let distance = bottom < 0 ? CGFloat.greatestFiniteMagnitude : bottom - viewport.size.height
+                        Color.clear.onChange(of: distance, initial: true) { _, new in action(new) }
+                    }
                 }
         }
     }
@@ -86,11 +85,6 @@ extension View {
 
 enum LegacyScrollEdge {
     static let space = "cicada.scroll"
-    nonisolated(unsafe) static var container: CGFloat = 0
-    struct Container: PreferenceKey {
-        static let defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-    }
     /// -1 while the marker isn't drawn.
     struct Bottom: PreferenceKey {
         static let defaultValue: CGFloat = -1

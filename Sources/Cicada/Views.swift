@@ -230,7 +230,7 @@ struct MenuPanelView: View {
                 ChoiceRow(label: L("听到"), value: heardValue.0, badge: heardValue.1, compact: true, sections: sourceSections) {
                     model.sourceSelection = $0
                 }
-                ChoiceRow(label: L("翻译成"),
+                ChoiceRow(label: L("字幕"),
                           value: targetName(model.listen.resolvedTarget),
                           // "Follow system" leaves no room for the language name in the panel.
                           badge: settings.target == "system" ? (uiIsChinese ? L("跟随系统") : L("系统")) : nil,
@@ -376,6 +376,10 @@ extension MenuPanelView {
     @ViewBuilder var displayCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             switch settings.displayMode {
+            case "chat":
+                Text("共享时选要展示的窗口或浏览器标签页，整屏共享可能包含悬浮窗口。")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             case "bar":
                 cardRow(L("什么时候出现")) {
                     overlayAutoSegments(model: model, fill: uiIsChinese, track: Palette.line).frame(width: uiIsChinese ? segmentWidth : nil)
@@ -564,6 +568,11 @@ extension MenuPanelView {
             if model.speakAsking {
                 speakQuestion
             } else if settings.speakEnabled {
+                HStack {
+                    Text("对方听到").font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                    Spacer()
+                    SpeakTargetMenu(model: model, settings: settings)
+                }
                 talkCard
                 if model.lastSpeakLatency == nil, model.virtualMic != nil, !settings.listensToRoom, model.speakPhase == .idle {
                     Button("先试一句 →") { model.openSettings(.speak); model.speakTestShown = true }
@@ -701,7 +710,8 @@ struct TalkKeyCap: View {
 
 /// One of 实时纪要 / 字幕条 / 不显示 in the menu bar panel: a small picture of what shows on screen.
 struct DisplayTile: View {
-    static let modes = ["notes", "bar", "none"]
+    static let options: [ChoiceOption] = [("notes", L("实时纪要")), ("bar", L("字幕条")), ("none", L("不显示")), ("chat", L("实时对话"))]
+    static var modes: [String] { options.map(\.id) }
     let mode: String
     let selected: Bool
     /// Under the picked tile's name: what clicking it again does.
@@ -709,11 +719,7 @@ struct DisplayTile: View {
     let action: () -> Void
 
     private var title: String {
-        switch mode {
-        case "bar": return L("字幕条")
-        case "none": return L("不显示")
-        default: return L("实时纪要")
-        }
+        Self.options.first(where: { $0.id == mode })?.title ?? L("实时纪要")
     }
 
     var body: some View {
@@ -745,6 +751,12 @@ struct DisplayTile: View {
 
     @ViewBuilder private var glyph: some View {
         switch mode {
+        case "chat":
+            VStack(alignment: .leading, spacing: 3) {
+                Capsule().fill(Palette.ink).frame(width: 21, height: 8)
+                Capsule().fill(Color.blue).frame(width: 18, height: 8).offset(x: 13)
+            }
+            .frame(width: 38, height: 26)
         case "bar":
             RoundedRectangle(cornerRadius: 4).fill(Color.white)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(frameLine, lineWidth: 1))
@@ -1087,7 +1099,13 @@ struct MainWindowView: View {
                 } else {
                     transcript(s)
                 }
-                if s.id == store.liveID { liveNow }
+                if s.id == store.liveID {
+                    if settings.displayMode == "chat" {
+                        LanguageNotice(model: model)
+                    } else {
+                        liveNow
+                    }
+                }
                 // Under the page, not in its header: the controls stay while the transcript scrolls.
                 if player.sessionID == s.id, s.id != store.liveID, player.ready || player.missing {
                     RecordingPlayerBar(player: player)

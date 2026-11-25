@@ -222,6 +222,12 @@
 "SRT 字幕…" = "SRT Subtitles…";
 "显示" = "Display";
 "字幕条" = "Subtitle bar";
+"实时对话" = "Live chat";
+"回到最新消息" = "Back to latest message";
+"声音 %lld" = "Voice %lld";
+"共享时选要展示的窗口或浏览器标签页，整屏共享可能包含悬浮窗口。" = "Share the window or browser tab you want to show. Sharing an entire screen can include floating windows.";
+"共享已开启" = "Sharing enabled";
+"已请求隐藏 · 整屏共享可能可见" = "Hide requested · May appear in full-screen sharing";
 "不显示" = "None";
 "小卡" = "Card";
 "侧栏" = "Sidebar";
@@ -410,6 +416,8 @@
 "同声传译还没打开" = "Interpreting is off";
 "对方听到" = "They hear";
 "跟随对方时，对方说什么语言就翻成什么" = "Following them: translated into whatever language they speak";
+"与字幕相同" = "Same as subtitles";
+"与字幕相同（%@）" = "Same as subtitles (%@)";
 "跟随对方（%@）" = "Follow them (%@)";
 "跟随对方" = "Follow them";
 "对方说" = "They say";
@@ -1670,6 +1678,8 @@
 "设置已保存" = "Settings saved.";
 "已保存密钥" = "Key saved";
 "密钥保存失败" = "Could not save key.";
+"Soniox 项目区域" = "Soniox project region";
+"请在 AI 服务中检查 Soniox 密钥及其项目区域" = "Check the Soniox API key and its project region in AI Service.";
 "请检查 Soniox 密钥和模型后重新开始" = "Check your Soniox connection, key and model, then try again.";
 "ElevenLabs 无法播放，请检查密钥、模型和声音" = "ElevenLabs could not play the translation. Check the key, model and voice.";
 "松开发言键后播放译文" = "Translations play after you release the talk key.";

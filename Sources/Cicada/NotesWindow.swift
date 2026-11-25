@@ -407,11 +407,7 @@ struct NotesWindowView: View {
         .padding(.horizontal, 24).padding(.top, 34).padding(.bottom, 12)
     }
 
-    /// 共享屏幕时让对方看到, always here so it can be turned back on: an orange lamp while shared
-    /// screens and recordings see the window, a hollow grey one while only you do (the window
-    /// isn't captured then, so nobody else sees it). No words beside it except a hint while the
-    /// pointer rests on it: once on, words would show in the shared screen; the lamp's first wide
-    /// breath confirms the click instead.
+    /// The badge reflects the requested sharing policy. The capture app controls what goes out.
     private var capturableBadge: some View {
         let on = settings.notesCapturable
         return Button { model.setNotesCapturable(!on) } label: {
@@ -430,7 +426,7 @@ struct NotesWindowView: View {
         }
         .overlay(alignment: .trailing) {
             if badgeHint {
-                Text(on ? L("对方可见 · 点击关闭") : L("仅自己可见 · 点击共享"))
+                Text(on ? L("共享已开启") : L("已请求隐藏 · 整屏共享可能可见"))
                     .font(.system(size: 11)).foregroundStyle(.white).lineLimit(1).fixedSize()
                     .padding(.horizontal, 8).frame(height: 20)
                     .background(Capsule().fill(Palette.ink.opacity(0.88)))
@@ -439,7 +435,7 @@ struct NotesWindowView: View {
         }
         .animation(.easeOut(duration: 0.12), value: badgeHint)
         .accessibilityLabel(Text("共享屏幕时让对方看到"))
-        .accessibilityValue(on ? Text("对方可见") : Text("仅自己可见"))
+        .accessibilityValue(on ? Text("共享已开启") : Text("已请求隐藏 · 整屏共享可能可见"))
     }
 
     private var searchField: some View {

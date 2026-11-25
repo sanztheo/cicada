@@ -17,6 +17,14 @@ struct SpeechServiceSettingsView: View {
                     Toggle("用 Soniox 识别会议和按键发言", isOn: $draft.soniox)
                     if draft.soniox {
                         SpeechServiceKey(service: "soniox") { message = "" }
+                        Picker(L("Soniox 项目区域"), selection: Binding(
+                            get: { draft.sonioxRegion ?? .us },
+                            set: { draft.sonioxRegion = $0 }
+                        )) {
+                            ForEach(SonioxRegion.allCases, id: \.self) { region in
+                                Text(verbatim: region.name).tag(region)
+                            }
+                        }
                         TextField(L("语音识别"), text: $draft.sonioxModel)
                         Picker(L("翻译"), selection: $draft.directTranslation) {
                             Text(verbatim: "Soniox").tag(true)

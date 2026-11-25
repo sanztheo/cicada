@@ -232,6 +232,13 @@ final class ListenEngine {
         guard let carry else { return volatileText }
         return [carry.text, volatileText].filter { !$0.isEmpty }.joined(separator: joiner(for: activeLang?.code ?? ""))
     }
+
+    /// Final lines already appear in the meeting record; chat only needs the unfinished words.
+    var chatDraft: (source: String, translation: String)? {
+        let text = shownDraft
+        guard !hidesSource, !text.isEmpty else { return nil }
+        return (text, volatileTranslation)
+    }
     /// Final transcript time and how long after the last word it came, per segment, until its translation lands.
     private var finalTiming: [Int: (at: Date, recognize: Double?)] = [:]
 
@@ -1225,7 +1232,7 @@ final class ListenEngine {
                 attachCloud(stream, generation: gen, replay: replay)
             } catch {
                 onServiceStopped?()
-                setStatus(L("请检查 Soniox 密钥和模型后重新开始"))
+                setStatus(SonioxStream.failureMessage(for: error))
             }
             return
         }
@@ -1276,7 +1283,7 @@ final class ListenEngine {
             } catch {
                 if stream is SonioxStream, let self, self.generation == gen {
                     self.onServiceStopped?()
-                    self.setStatus(L("请检查 Soniox 密钥和模型后重新开始"))
+                    self.setStatus(SonioxStream.failureMessage(for: error))
                 }
                 debugLog("cloud: stream ended: \(error)")
             }
@@ -1545,7 +1552,7 @@ final class ListenEngine {
     private func boundaryCut(_ fed: Double, held: Double) -> (at: Int, kind: HeardText.Boundary, end: Double)? {
         let code = activeLang?.code ?? ""
         let line = HeardText.size(shownDraft)
-        let patient = settings.displayMode != "bar" && code.hasPrefix("zh")
+        let patient = settings.displayMode != "bar" && settings.displayMode != "chat" && code.hasPrefix("zh")
         let cap = HeardText.capped(code) + (patient ? HeardText.capped(code) / 3 : 0)
         let kind: HeardText.Boundary
         if line >= cap || held >= (patient ? 15 : 12) { kind = .word }

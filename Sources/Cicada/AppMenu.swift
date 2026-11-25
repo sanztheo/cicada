@@ -57,9 +57,9 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         add(notes, to: main)
 
         let display = NSMenu(title: L("显示"))
-        display.addItem(item(L("实时纪要"), #selector(setDisplay(_:)), tag: 0))
-        display.addItem(item(L("字幕条"), #selector(setDisplay(_:)), tag: 1))
-        display.addItem(item(L("不显示"), #selector(setDisplay(_:)), tag: 2))
+        for (index, option) in DisplayTile.options.enumerated() {
+            display.addItem(item(option.title, #selector(setDisplay(_:)), tag: index))
+        }
         display.addItem(.separator())
         display.addItem(item(L("小卡"), #selector(setSize(_:)), "1", tag: 0))
         display.addItem(item(L("侧栏"), #selector(setSize(_:)), "2", tag: 1))
@@ -150,7 +150,7 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         case #selector(exportNotes(_:)):
             return session.map { !$0.lines.isEmpty } ?? false
         case #selector(setDisplay(_:)):
-            item.state = ["notes", "bar", "none"][item.tag] == model.settings.displayMode ? .on : .off
+            item.state = DisplayTile.options[item.tag].id == model.settings.displayMode ? .on : .off
             return true
         case #selector(setSize(_:)):
             item.state = notesWindow.isVisible && notesWindow.layout == NotesWindowController.Layout.allCases[item.tag] ? .on : .off
@@ -218,7 +218,7 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         model.export(s, kind: ["md", "word", "srt"][sender.tag])
     }
 
-    @objc private func setDisplay(_ sender: NSMenuItem) { model?.setDisplayMode(["notes", "bar", "none"][sender.tag]) }
+    @objc private func setDisplay(_ sender: NSMenuItem) { model?.setDisplayMode(DisplayTile.options[sender.tag].id) }
 
     @objc private func setSize(_ sender: NSMenuItem) {
         guard let model else { return }

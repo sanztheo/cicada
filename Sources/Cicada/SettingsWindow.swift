@@ -513,11 +513,7 @@ struct SettingsView: View {
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
                 SettingsRow(title: L("说\(settings.speakFromLang.name)，对方听到")) {
-                    PillMenu(value: settings.speakTo == "room" ? L("跟随对方（\(targetName(model.speak.targetCode))）") : targetName(settings.speakTo),
-                             options: [("room", L("跟随对方"))] + targetLanguages.map { ($0.code, $0.name) }) {
-                        settings.speakTo = $0
-                        model.objectWillChange.send()
-                    }
+                    SpeakTargetMenu(model: model, settings: settings)
                 }
                 VoiceSection(model: model, settings: settings, ling: model.ling)
             }
@@ -693,16 +689,16 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             SettingsCard {
                 SettingsRow(title: L("听的时候显示"), detail: L("选择任意模式都会正常保存记录、生成纪要")) {
-                    Segments(options: [("notes", L("实时纪要")), ("bar", L("字幕条")), ("none", L("不显示"))],
+                    Segments(options: DisplayTile.options,
                              value: settings.displayMode) { model.setDisplayMode($0) }
                 }
-                SettingsRow(title: L("切换显示方式"), detail: model.toggleKeyTaken ? L("被其他应用占用了，点右边换一个") : L("实时纪要 → 字幕条 → 不显示"), divider: false) {
+                SettingsRow(title: L("切换显示方式"), detail: model.toggleKeyTaken ? L("被其他应用占用了，点右边换一个") : DisplayTile.options.map(\.title).joined(separator: " → "), divider: false) {
                     ShortcutField(model: model, role: .toggle)
                 }
             }
             Text("实时纪要").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.secondary).padding(.top, 4)
             SettingsCard {
-                SettingsRow(title: L("共享屏幕时让对方看到"), detail: L("录屏也一样；关着时只有你看得到纪要窗口"), divider: false,
+                SettingsRow(title: L("共享屏幕时让对方看到"), detail: L("共享时选要展示的窗口或浏览器标签页，整屏共享可能包含悬浮窗口。"), divider: false,
                             mark: AnyView(CapturableMark(on: settings.notesCapturable, size: 8).frame(width: 16, height: 16))) {
                     Toggle("共享屏幕时让对方看到", isOn: Binding(get: { settings.notesCapturable }, set: { model.setNotesCapturable($0) }))
                         .toggleStyle(.switch).labelsHidden().tint(Palette.accent)

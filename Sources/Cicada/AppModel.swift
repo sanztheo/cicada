@@ -13,6 +13,7 @@ final class AppModel: ObservableObject {
     let settings = AppSettings()
     let store = SessionStore()
     let overlay = OverlayController()
+    private lazy var liveChat = LiveChatPanel(store: store)
     let talkCombo = HotKey(id: 1, shortcut: .defaultTalk)
     let talkRight = RightOptionKey()
     let toggleKey = HotKey(id: 2, shortcut: .defaultToggle)
@@ -215,7 +216,13 @@ final class AppModel: ObservableObject {
         // A meeting or speaking holds the update notification until it ends (see stop()).
         updates.busy = { [weak self] in guard let self else { return false }; return self.running || self.speak.phase != .idle }
         // Words in the Mac's audio: speech, which the room mic is silenced for (music isn't, `EchoGate`).
-        listen.onWords = { [gate = roomListen.echoGate] in gate.heardWords() }
+        listen.onWords = { [weak self, gate = roomListen.echoGate] in
+            gate.heardWords()
+            if self?.settings.displayMode == "chat" { self?.liveChat.activity() }
+        }
+        roomListen.onWords = { [weak self] in
+            if self?.settings.displayMode == "chat" { self?.liveChat.activity() }
+        }
         speak.micTaken = { [weak self] in
             guard let self else { return false }
             return self.roomListen.holdsPlainMic || self.listen.holdsPlainMic
@@ -384,7 +391,12 @@ final class AppModel: ObservableObject {
         speak.interpret = { [weak self] wav, from, to, trace in
             await self?.translator.interpret(wav: wav, source: from, target: to, trace: trace)
         }
-        speak.roomLanguage = { [weak self] in self?.listen.activeLang?.code }
+        speak.roomLanguage = { [weak self] in
+            guard let self else { return nil }
+            guard self.settings.speakTo == "room" else { return self.listen.activeLang?.code }
+            if case .fixed(let language) = self.settings.sourceMode { return language.code }
+            return self.store.session(self.store.liveID)?.lastOtherLanguage(excluding: self.settings.speakFromLang.code)
+        }
         speak.inputDevice = { [weak self] in self?.systemMic.recordingDevice }
         let roomMic = { [weak self] () -> OutputDevice? in
             MainActor.assumeIsolated { AudioDevices.roomMic(excluding: self?.fakeGoneMics ?? [], preferredUID: self?.settings.roomMicUID) }
@@ -397,10 +409,16 @@ final class AppModel: ObservableObject {
         speak.onLive = { [weak self] phase, src, dst in
             guard let self else { return }
             self.muteRoomWhileSpeaking(phase)
+            let finishedPlayback = phase == .idle && self.speakPhase == .speaking
             self.speakPhase = phase
             // A 试一句 rehearsal shows in its own sheet: no notes window, caption or subtitle bar.
             if self.speakTester.busy { return }
             if phase == .listening && !src.isEmpty { self.heardSpeech(); self.heardWords() }
+            if self.settings.displayMode == "chat" {
+                // onUtterance commits the line once, before playback starts.
+                self.liveChat.said(phase, source: src, translation: dst, committed: phase == .speaking || finishedPlayback)
+                return
+            }
             guard self.settings.displayMode == "bar" else {
                 // The notes window's caption line shows what you are saying.
                 if phase != .idle || !src.isEmpty {
@@ -507,12 +525,11 @@ final class AppModel: ObservableObject {
     }
 
     func launch() async {
+        if settings.displayMode == "chat" { liveChat.show(subtitles: subtitles) }
+        // The room microphone is chosen for one meeting at a time.
+        if settings.hearsRoom { settings.listenSource = "system" }
         await listen.refreshInstalledLocales()
         refresh()
-        // Listening starts by itself at launch: never with the microphone open. 会议室 is chosen
-        // for the meeting at hand, not kept for the next login.
-        if settings.hearsRoom { settings.listenSource = "system" }
-        start()
         if settings.speakEnabled { enableSpeaking(true) }
     }
 
@@ -740,11 +757,11 @@ final class AppModel: ObservableObject {
     // MARK: Start / stop
 
     /// `byUser`: started by a click or ⌘R, so the notes window shows at once as the sign that
-    /// listening began. Starting by itself (launch, a meeting app's call) waits for the first words.
+    /// listening began. An automatically detected follow-up call waits for the first words.
     func start(byUser: Bool = false) {
         guard !listen.isRunning else { return }
         // Starting by hand means the meeting is here now: open the room microphone too, when the
-        // user turned on 开始听时打开麦克风 (设置 › 通用). Launch still stays silent.
+        // user turned on 开始听时打开麦克风 (设置 › 通用).
         micAutoOpened = false
         if byUser, settings.autoMicOnStart, settings.listenSource == "system" {
             settings.listenSource = Recognition.legacy ? "room" : "both"
@@ -752,6 +769,7 @@ final class AppModel: ObservableObject {
             debugLog("mic auto-on: user started listening")
         }
         let session = store.begin()
+        liveChat.beginMeeting(session.id)
         diagnostics.begin()
         speakers.reset()
         lineForSegment = [:]
@@ -820,6 +838,7 @@ final class AppModel: ObservableObject {
         notes.finish()
         if let ended { folderExport.ended(ended) }
         overlay.hide()
+        liveChat.endMeeting()
         refresh()
         updates.notifyIfDue()  // held while the meeting was on
     }
@@ -888,6 +907,7 @@ final class AppModel: ObservableObject {
             listen.restartSoniox()
             roomListen.restartSoniox()
         } else if wasOff && subtitles != "original" { listen.translationResumed() }
+        if settings.displayMode == "chat" { liveChat.show(subtitles: subtitles) }
         debugLog("subtitles=\(subtitles) meetingOnly=\(meetingOnly)")
         objectWillChange.send()
     }
@@ -927,14 +947,15 @@ final class AppModel: ObservableObject {
     }
 
     func setDisplayMode(_ mode: String) {
+        if mode == "chat" { liveChat.selectScreen() }
         settings.displayMode = mode
         objectWillChange.send()
         showDisplay(force: true)
     }
 
-    /// ⌃⌥S: notes → subtitle bar → nothing → notes.
+    /// The shortcut follows the same order as the display tiles.
     func cycleDisplay() {
-        let order = ["notes", "bar", "none"]
+        let order = DisplayTile.modes
         let i = order.firstIndex(of: settings.displayMode) ?? 0
         setDisplayMode(order[(i + 1) % order.count])
     }
@@ -950,7 +971,12 @@ final class AppModel: ObservableObject {
 
     /// `force`: the user asked for this mode or started listening, show it even before anyone speaks.
     private func showDisplay(force: Bool = false) {
+        if settings.displayMode != "chat" { liveChat.hide() }
         switch settings.displayMode {
+        case "chat":
+            overlay.hide()
+            notesWindow.hide()
+            liveChat.show(subtitles: subtitles, openHistory: force || listen.isRunning)
         case "bar":
             notesWindow.hide()
             if listen.isRunning { overlay.show() }
@@ -982,7 +1008,11 @@ final class AppModel: ObservableObject {
     /// The listening pill: bring back what shows this meeting, the subtitle bar in 字幕条 mode,
     /// else the notes window (in 不显示 just this once).
     func showLiveDisplay() {
-        if settings.displayMode == "bar" { overlay.reveal() } else { openNotesWindow() }
+        switch settings.displayMode {
+        case "chat": liveChat.show(subtitles: subtitles, openHistory: true)
+        case "bar": overlay.reveal()
+        default: openNotesWindow()
+        }
     }
 
     /// 收起 in the menu bar panel: out of the way for now, still in 实时纪要 mode
@@ -1046,7 +1076,9 @@ final class AppModel: ObservableObject {
         status = text
         debugLog("speak: notice \(text)")
         if speakTester.busy { return }
-        if settings.displayMode == "bar" {
+        if settings.displayMode == "chat" {
+            liveChat.said(.idle, source: "", translation: text, committed: false)
+        } else if settings.displayMode == "bar" {
             if !overlay.isShown { overlay.show() }
             overlay.setSpeaking(.init(phase: .idle, source: "", translation: text))
         } else if running {
@@ -1377,7 +1409,7 @@ final class AppModel: ObservableObject {
             let calls = w.config.followApps ? (fakeCalls ?? MicUsers.currentCalls()) : [:]
             // A meeting app call started while we were already listening to the Mac only: add the
             // room microphone, or the user's own voice is missing from the record (Tencent Meeting,
-            // Zoom, …). 启动时 launch() still starts without the microphone; this is the call signal.
+            // Zoom, …).
             // Once a meeting: closing the microphone by hand during the call must stay closed.
             if settings.autoMicOnStart, !micAutoOpened, settings.listenSource == "system", !calls.isEmpty {
                 micAutoOpened = true
@@ -1786,6 +1818,10 @@ final class AppModel: ObservableObject {
         liveSource = visible
         liveTranslation = dst
         if !src.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { heardSpeech(); heardWords() }
+        if settings.displayMode == "chat", listen.isRunning {
+            liveChat.heard((room ? roomListen : listen).chatDraft)
+            return
+        }
         guard settings.displayMode == "bar" else { return }
         overlay.clearStatus()
         let shown = displayed(visible, dst)
@@ -1894,8 +1930,11 @@ final class AppModel: ObservableObject {
         heardWords()
     }
 
-    private func recordSaid(_ src: String, _ dst: String, from: String, to: String, secondsAgo: Double) {
-        guard let start = store.liveStart else { return }
+    private func recordSaid(_ src: String, _ dst: String?, from: String, to: String, secondsAgo: Double) {
+        guard let start = store.liveStart else {
+            if settings.displayMode == "chat" { liveChat.appendStandalone(src, dst ?? "") }
+            return
+        }
         lineCounter += 1
         let t = max(0, Date().timeIntervalSince(start) - secondsAgo)
         store.append(TranscriptLine(id: "m\(lineCounter)", t: t, speaker: "me", src: src, dst: dst,
@@ -2691,8 +2730,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 MainActor.assumeIsolated { self?.showOnboarding() }
             }
-        } else if !Self.launchedAsLoginItem {
+        } else if !Self.launchedAsLoginItem, model.settings.displayMode != "chat" {
             // Opened by hand (Finder, Launchpad, Spotlight): show something, like the Dock icon does.
+            // Live chat already opens its own panel, and records remain available from the menu.
             showMainWindow()
         }
         model.installDebugControl()

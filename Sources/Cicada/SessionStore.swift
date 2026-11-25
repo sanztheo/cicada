@@ -28,6 +28,15 @@ struct VoiceGuess: Codable, Equatable {
 }
 
 struct Session: Codable, Identifiable, Equatable {
+    func lastOtherLanguage(excluding myLanguage: String) -> String? {
+        let myBase = myLanguage.prefix { $0 != "-" }
+        return lines.last { line in
+            let base = line.srcLang.prefix { $0 != "-" }
+            // Soniox can identify languages outside the Mac's on-device speech model list.
+            return line.speaker == "them" && !base.isEmpty && base != "auto" && base != "und" && base != myBase
+        }?.srcLang
+    }
+
     var id: String
     var title: String
     var startedAt: Date

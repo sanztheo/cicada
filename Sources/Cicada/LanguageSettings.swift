@@ -40,12 +40,8 @@ struct LanguageSettings: View {
                         model.speakFromChanged()
                     }
                 }
-                SettingsRow(title: L("对方听到"), detail: L("跟随对方时，对方说什么语言就翻成什么"), divider: false) {
-                    PillMenu(value: settings.speakTo == "room" ? L("跟随对方（\(targetName(model.speak.targetCode))）") : targetName(settings.speakTo),
-                             options: [("room", L("跟随对方"))] + targetLanguages.map { ($0.code, $0.name) }) {
-                        settings.speakTo = $0
-                        model.objectWillChange.send()
-                    }
+                SettingsRow(title: L("对方听到"), divider: false) {
+                    SpeakTargetMenu(model: model, settings: settings)
                 }
             }
         }
@@ -147,5 +143,27 @@ struct LanguageSettings: View {
     private var notesNow: String {
         if settings.notesLanguage == "source" { return model.listen.activeLang?.name ?? L("会议原文") }
         return targetName(settings.myLanguage)
+    }
+}
+
+/// The menu bar and both settings pages edit the same outgoing route.
+struct SpeakTargetMenu: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var settings: AppSettings
+
+    private var selection: String {
+        switch settings.speakTo {
+        case "room": return L("跟随对方（\(targetName(model.speak.targetCode))）")
+        case "subtitles": return L("与字幕相同（\(targetName(model.speak.targetCode))）")
+        default: return targetName(settings.speakTo)
+        }
+    }
+
+    var body: some View {
+        PillMenu(value: selection,
+                 options: [("subtitles", L("与字幕相同")), ("room", L("跟随对方"))] + targetLanguages.map { ($0.code, $0.name) }) {
+            settings.speakTo = $0
+            model.objectWillChange.send()
+        }
     }
 }

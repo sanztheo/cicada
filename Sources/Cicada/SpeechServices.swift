@@ -4,11 +4,27 @@ import Foundation
 struct SpeechServices: Codable, Equatable {
     var soniox = false
     var sonioxModel = "stt-rt-v6"
+    // Older settings used only the US endpoint and have no region field.
+    var sonioxRegion: SonioxRegion?
     var directTranslation = true
     var elevenLabs = false
     var voiceModel = "eleven_flash_v2_5"
     var voiceID = ""
     var voiceName = ""
+}
+
+enum SonioxRegion: String, Codable, CaseIterable {
+    case us, eu, jp
+    case india = "in"
+
+    var name: String {
+        Locale.current.localizedString(forRegionCode: rawValue.uppercased()) ?? rawValue.uppercased()
+    }
+
+    var streamURL: URL {
+        let domain = self == .us ? "soniox.com" : "\(rawValue).soniox.com"
+        return URL(string: "wss://stt-rt.\(domain)/transcribe-websocket")!
+    }
 }
 
 /// Both credentials belong to fixed provider origins, including across redirects.
@@ -27,7 +43,7 @@ extension LingClient {
     func sonioxStream(settings: SpeechServices, hint: String?, target: String?, otherLanguage: String?,
                       priority: Priority) throws -> SonioxStream {
         guard !hideKey, let key = AIKey.read("soniox") else { throw Failure.noKey }
-        let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
+        let url = (settings.sonioxRegion ?? .us).streamURL
         var request = URLRequest(url: url)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         return try SonioxStream(socket: Self.speechSession.webSocketTask(with: request), model: settings.sonioxModel,

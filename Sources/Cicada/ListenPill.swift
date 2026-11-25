@@ -134,7 +134,11 @@ struct ListenPill: View {
     /// The pill's left part: shows what this meeting is on screen as. The languages stay one hover
     /// away, under what a click does; the pill itself keeps to state, level and time.
     private func showButton<Label: View>(@ViewBuilder _ label: () -> Label) -> some View {
-        let action = model.settings.displayMode == "bar" ? L("显示字幕条") : L("显示实时纪要")
+        let action: String = switch model.settings.displayMode {
+        case "bar": L("显示字幕条")
+        case "chat": L("实时对话")
+        default: L("显示实时纪要")
+        }
         return Button { model.showLiveDisplay() } label: {
             label().contentShape(Rectangle())
         }

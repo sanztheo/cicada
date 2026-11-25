@@ -31,7 +31,7 @@
 
 In meetings or livestreams, Cicada gives you live bilingual subtitles and writes structured meeting notes as it listens. When it's your turn to speak, hold the talk key (right `⌥` on Mac, right `Ctrl` on Windows, customizable) and talk—the other side hears your translated voice right in the call. Cicada listens to system audio directly without sending bots into the meeting, so no one else notices a thing. Apple silicon Macs recognize speech on device by default.
 
-On Mac, **Settings › AI Service › Live speech services** can send meeting and push-to-talk audio to Soniox and read the translated text with a chosen ElevenLabs voice. Each service has its own saved key and starts off. Release the talk key to speak through BlackHole in any app that uses it as its microphone. [Mac configuration guide](docs/macos-speech-services.md).
+On Mac, **Settings › AI Service › Live speech services** can send meeting and push-to-talk audio to Soniox and read the translated text with a chosen ElevenLabs voice. Each service has its own saved key and starts off. Release the talk key to speak through BlackHole in any app that uses it as its microphone. In the menu bar, choose **They hear › Same as subtitles** to use the subtitle language for your next spoken translation. [Mac configuration guide](docs/macos-speech-services.md).
 
 **Where it works**: Anything that plays sound on your computer—Tencent Meeting, Feishu, DingTalk, WeCom, Zoom, Teams, Google Meet, Webex, Discord, and Telegram voice chats, plus X Spaces, YouTube, Twitch, Bilibili Live, podcasts, and web pages. On phones, the system blocks recording audio from call and meeting apps—put it on speaker and use In person instead.
 
@@ -59,6 +59,8 @@ As you listen, Cicada organizes a summary, topics and key points, conclusions, t
 With an AI service connected, misheard names and terms are fixed on the spot: homophones are corrected right away, while unfamiliar names are asked about once and fixed automatically once you confirm. You can paste common terms into **Word list** in Settings ahead of time. After the meeting, select **Edit line…** to batch-fix the same misheard word across the whole session, with full undo support.
 
 ### Live subtitles and language detection
+
+On Mac, Cicada opens paused. Choose **Notes › Start Recording** (⌘R) when you want to start a meeting.
 
 Cicada detects the spoken language within seconds and translates it into your system language; press `⌃⌥S` to switch display modes. The subtitle bar only appears when someone speaks and turns see-through under your pointer so it stays out of the way. On macOS 26 with Apple silicon, Cicada also re-listens on device to refine each line 15 to 30 seconds later, fixing typos and missed words.
 
@@ -109,7 +111,7 @@ The Mac app only asks for a permission when you use the corresponding feature, a
 
 - **Transparent networking**: Only connects to the internet for translation (`translate.googleapis.com`), your configured AI service (such as `api.ant-ling.com`), downloading the Apple-notarized BlackHole driver (verified against SHA-256), and checking GitHub once a day for updates. No analytics, no tracking, and no server of our own.
 - **Local storage**: Records and recordings live in `~/Library/Application Support/LiveSubs`. Your key and voice sample are readable only by your current system account and excluded from Time Machine and logs.
-- **Hidden from screen capture**: On Mac, screen sharing, screen recordings, and screenshots cannot capture the notes window. You can manually turn on **Show in screen sharing** when recording a demo.
+- **Screen sharing on Mac**. To keep Cicada on your screen, share the presentation window or browser tab. Capturing the whole display can include the notes window and floating subtitles. In **Display › Live chat**, your interpreted speech appears on the right in blue and identified voices appear on the left in their own colors. Starting the meeting opens a 560 × 250 pt chat below the menu bar. Your confirmed words stay in the conversation even when translation fails. It stays open and the background dims after three seconds of silence. Scroll up to read the meeting, then use the down arrow to rejoin the live conversation.
 
 ## Models
 

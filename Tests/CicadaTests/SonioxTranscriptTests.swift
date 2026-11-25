@@ -3,6 +3,18 @@ import Testing
 @testable import Cicada
 
 struct SonioxTranscriptTests {
+    @Test func regionalRoutingPreservesOldPreferencesAndUsesTheProjectsHost() throws {
+        let json = #"{"soniox":true,"sonioxModel":"stt-rt-v6","directTranslation":true,"elevenLabs":true,"voiceModel":"custom","voiceID":"my-voice","voiceName":"My voice"}"#
+        var settings = try JSONDecoder().decode(SpeechServices.self, from: Data(json.utf8))
+        #expect(settings.sonioxRegion == nil && settings.voiceID == "my-voice")
+        #expect((settings.sonioxRegion ?? .us).streamURL.host == "stt-rt.soniox.com")
+        settings.sonioxRegion = .eu
+        let saved = try JSONEncoder().encode(settings)
+        let reopened = try JSONDecoder().decode(SpeechServices.self, from: saved)
+        #expect(reopened == settings)
+        #expect(reopened.sonioxRegion?.streamURL.absoluteString == "wss://stt-rt.eu.soniox.com/transcribe-websocket")
+    }
+
     private func reply(_ json: String) throws -> SonioxTranscript.Response {
         try JSONDecoder().decode(SonioxTranscript.Response.self, from: Data(json.utf8))
     }

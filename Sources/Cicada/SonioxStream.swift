@@ -75,6 +75,14 @@ struct SonioxTranscript {
 }
 
 final class SonioxStream: RecognitionStream, @unchecked Sendable {
+    static func failureMessage(for error: Error) -> String {
+        if let failure = error as? LingClient.Failure,
+           [.http(401), .invalidKey, .noKey].contains(failure) {
+            return L("请在 AI 服务中检查 Soniox 密钥及其项目区域")
+        }
+        return L("请检查 Soniox 密钥和模型后重新开始")
+    }
+
     static let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
     var format: AVAudioFormat { Self.audioFormat }
     let results: AsyncThrowingStream<Recognition.Piece, Error>

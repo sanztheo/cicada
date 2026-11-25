@@ -1,7 +1,44 @@
+import Foundation
 import Testing
 @testable import Cicada
 
 @Suite struct LanguageTests {
+    @Test func followingThemKeepsTheLastForeignLanguageFromEitherAudioSource() {
+        func line(_ id: String, _ speaker: String, _ language: String, via: String? = nil) -> TranscriptLine {
+            TranscriptLine(id: id, t: 0, speaker: speaker, src: id, srcLang: language, dstLang: "fr", via: via)
+        }
+        var session = Session(id: "one", title: "", startedAt: Date(), lines: [], hasAudio: false)
+        session.lines = [line("1", "them", "de"), line("2", "me", "fr")]
+        #expect(session.lastOtherLanguage(excluding: "fr") == "de")
+        session.lines += [line("3", "them", "it", via: "room"), line("4", "them", "fr-CA"), line("5", "them", "auto")]
+        #expect(session.lastOtherLanguage(excluding: "fr") == "it")
+    }
+
+    @Test @MainActor func outgoingLanguageCanTrackSubtitlesAcrossChangesAndRelaunch() throws {
+        let suite = "cicada-test-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.speakFrom = "fr-FR"
+        settings.speakTo = "subtitles"
+        for target in ["zh-CN", "de", "zh-TW"] {
+            settings.target = target
+            #expect(settings.resolvedSpeakTarget(roomLanguage: "fr") == target)
+        }
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.resolvedSpeakTarget(roomLanguage: nil) == "zh-TW")
+        reopened.target = "system"
+        for source in [nil, reopened.myLanguage] {
+            #expect(reopened.resolvedSpeakTarget(roomLanguage: source) == reopened.resolvedTarget(source: source))
+        }
+        reopened.target = "de"
+        reopened.speakTo = "en"
+        #expect(reopened.resolvedSpeakTarget(roomLanguage: "ja") == "en")
+        reopened.speakTo = "room"
+        #expect(reopened.resolvedSpeakTarget(roomLanguage: "ja") == "ja")
+        #expect(reopened.resolvedSpeakTarget(roomLanguage: "fr") == "en")
+    }
+
     @Test(arguments: [
         ("zh-Hans-CN", "zh-CN"), ("zh-Hans-CA", "zh-CN"), ("zh-Hant-TW", "zh-TW"),
         ("zh-TW", "zh-TW"), ("zh-HK", "zh-TW"), ("zh-CN", "zh-CN"),
