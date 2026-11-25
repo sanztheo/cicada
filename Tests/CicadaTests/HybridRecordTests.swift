@@ -15,6 +15,16 @@ import Testing
         #expect(RecordList.heardBoth([line("a", via: "room"), line("b")]))
     }
 
+    @Test func personalMicrophoneCountsAsRoomAndEndsAnInterpretedRun() {
+        let mic = line("mic", "me", via: "room")
+        let press = line("press", "me")
+        let mac = line("mac")
+        #expect(RecordList.heardBoth([mic, mac]))
+        #expect(!RecordList.heardBoth([mic, press]))
+        #expect(SpeakerLabels.runStarts([mic, press, mac], [:]) == ["mic", "press", "mac"])
+        #expect(SpeakerLabels.runStarts([press, mic], [:]) == ["press", "mic"])
+    }
+
     @Test func aChangeOfPlaceStartsANewRun() {
         let ls = [line("a"), line("b"), line("c", via: "room"), line("d", "me"), line("e", via: "room"), line("f")]
         #expect(RecordList.placeStarts(ls) == ["a", "c", "e", "f"])

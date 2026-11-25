@@ -17,6 +17,7 @@ struct TranscriptLine: Codable, Identifiable, Equatable {
     var voice: Int? = nil
     /// 电脑和会议室: "room" when the room mic heard it; absent for the Mac's audio (or older records).
     var via: String? = nil
+    var isInterpretedSpeech: Bool { speaker == "me" && via != "room" }
     /// Words the AI service fixed (`Correction`); `src` stays what was heard. Absent when none.
     var fixes: [LineFix]? = nil
 }
@@ -537,7 +538,7 @@ enum TranscriptExport {
     nonisolated(unsafe) static var voices = false
 
     static func speakerName(_ line: TranscriptLine, _ numbers: [String: Int] = [:], _ names: [Int: String] = [:]) -> String {
-        if line.speaker == "me" { return L("你 · 同传") }
+        if line.speaker == "me" { return line.isInterpretedSpeech ? L("你 · 同传") : L("你") }
         if let n = numbers[line.id] { return SpeakerLabels.label(n, names) }
         return numbers.isEmpty ? L("对方") : L("未识别")
     }
@@ -601,7 +602,7 @@ enum TranscriptExport {
             let next = i + 1 < s.lines.count ? s.lines[i + 1].t : l.t + 4
             let end = max(l.t + 1, min(next, l.t + 8))
             // Your own lines (the talk key) say so, as the record does.
-            let tag = l.speaker == "me" ? "[\(L("同传"))] " : ""
+            let tag = l.speaker == "me" ? "[\(l.isInterpretedSpeech ? L("同传") : L("你"))] " : ""
             out += "\(i + 1)\n\(ts(l.t)) --> \(ts(end))\n\(tag)\(l.shown)\n"
             if let d = l.dst, d != l.shown { out += "\(d)\n" }
             out += "\n"

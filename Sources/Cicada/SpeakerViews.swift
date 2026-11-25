@@ -43,16 +43,19 @@ struct PlaceTag: View {
     }
 }
 
-/// Your own line: said with the talk key, so what the other side heard was its translation (同传).
+/// Your own line, with an interpreting badge only for the talk key.
 struct MeTag: View {
+    let line: TranscriptLine
     var body: some View {
         HStack(spacing: 5) {
             Text("你").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.accentInk)
-            Text("同传").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accentInk)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.accent.opacity(0.45), lineWidth: 1))
+            if line.isInterpretedSpeech {
+                Text("同传").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accentInk)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.accent.opacity(0.45), lineWidth: 1))
+            }
         }
-        .help(L("按住说话键说的，对方听到的是译文"))
+        .help(line.isInterpretedSpeech ? L("按住说话键说的，对方听到的是译文") : L("麦克风里的发言记为我"))
     }
 }
 
@@ -414,7 +417,7 @@ struct SpeakerPreview: View {
             ForEach(session.lines.prefix(12)) { l in
                 VStack(alignment: .leading, spacing: 3) {
                     if !starts.contains(l.id) {
-                    } else if l.speaker == "me" { MeTag() }
+                    } else if l.speaker == "me" { MeTag(line: l) }
                     else if let n = numbers[l.id] { SpeakerTag(number: n) }
                     else if !numbers.isEmpty { UnknownSpeakerTag() }
                     Text(l.shown).font(.system(size: 13)).foregroundStyle(Palette.ink)

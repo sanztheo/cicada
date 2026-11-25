@@ -331,7 +331,9 @@ enum SpeakerLabels {
     static func runStarts(_ lines: [TranscriptLine], _ numbers: [String: Int]) -> Set<String> {
         var out: Set<String> = [], last: String?
         for l in lines {
-            let key = l.speaker == "me" ? "me" : numbers[l.id].map { "n\($0)" } ?? "?"
+            let key: String
+            if l.speaker == "me" { key = l.isInterpretedSpeech ? "interpreted" : "me" }
+            else { key = numbers[l.id].map { "n\($0)" } ?? "?" }
             if key != last { out.insert(l.id) }
             last = key
         }

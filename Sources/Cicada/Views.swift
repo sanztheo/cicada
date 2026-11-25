@@ -434,12 +434,14 @@ extension MenuPanelView {
 // MARK: - 麦克风 in the panel
 
 extension MenuPanelView {
+    private var micCaption: String { settings.personalMicrophone ? L("麦克风里的发言记为我") : L("桌边的人说话也会记下") }
+
     /// 打开麦克风: the people in the room join the meeting the Mac is hearing.
     var micRow: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("麦克风").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
-                Text(model.micOn ? L("桌边的人说话也会记下") : L("关着 · 只听电脑声音"))
+                Text(model.micOn ? micCaption : L("关着 · 只听电脑声音"))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -497,6 +499,9 @@ struct MicButton: View {
                 }
             }
             .pickerStyle(.inline)
+            Divider()
+            Toggle("麦克风里的发言记为我", isOn: $settings.personalMicrophone)
+                .disabled(on)
         } label: {
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
                 .foregroundStyle(ink(on).opacity(0.75))
@@ -1388,7 +1393,7 @@ struct MainWindowView: View {
             if !label {
             } else if let speaker { SpeakerTag(number: speaker).padding(.bottom, 2) }
             else if voices, l.speaker != "me" { UnknownSpeakerTag().padding(.bottom, 2) }
-            else if l.speaker == "me" { MeTag().padding(.bottom, 2) }
+            else if l.speaker == "me" { MeTag(line: l).padding(.bottom, 2) }
             Text(l.shown).font(.system(size: 12)).foregroundStyle(Palette.secondary).lineSpacing(1)
                 .textSelection(.enabled)
             Text(l.dst ?? L("翻译中…")).font(.system(size: 14)).lineSpacing(2)
@@ -1559,7 +1564,7 @@ struct MainWindowView: View {
                     }
                     else if shownSession?.sourceFile == nil {
                         // An imported file has no "other side": its lines carry no label.
-                        if me { MeTag() } else {
+                        if me { MeTag(line: l) } else {
                             Text("对方").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.secondary)
                         }
                     }

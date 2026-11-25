@@ -8,6 +8,15 @@ struct LiveChatMessage: Identifiable, Equatable {
     var translation: String
     var voice: Int?
     var name: String?
+    var checkingEcho = false
+
+    var waitingForWords: Bool { id == "draft-me" && source.isEmpty && translation.isEmpty }
+
+    static func heard(_ segment: Segment, checkingEcho: Bool = false) -> Self {
+        let personal = segment.input == .personalMic
+        return Self(id: "draft-\(segment.id)", mine: personal, source: segment.text,
+                    translation: segment.translation ?? "", checkingEcho: personal && checkingEcho)
+    }
 
     static func recorded(_ line: TranscriptLine, in session: Session) -> Self {
         let name = line.voice.flatMap { voice in
@@ -21,7 +30,7 @@ struct LiveChatMessage: Identifiable, Equatable {
 @MainActor final class LiveChatState: ObservableObject {
     @Published private(set) var sessionID: String?
     @Published private(set) var standalone: [LiveChatMessage] = []
-    @Published var incoming: LiveChatMessage?
+    @Published var incoming: [LiveChatMessage] = []
     @Published var outgoing: LiveChatMessage?
     @Published var subtitles = "both"
     @Published var quiet = true
@@ -38,7 +47,7 @@ struct LiveChatMessage: Identifiable, Equatable {
     }
 
     func clearDrafts() {
-        incoming = nil
+        incoming = []
         outgoing = nil
     }
 
@@ -54,7 +63,7 @@ struct LiveChatMessage: Identifiable, Equatable {
     }
 
     func hasMessages(in session: Session?) -> Bool {
-        session?.lines.isEmpty == false || !standalone.isEmpty || incoming != nil || outgoing != nil
+        session?.lines.isEmpty == false || !standalone.isEmpty || !incoming.isEmpty || outgoing != nil
     }
 }
 
@@ -89,14 +98,12 @@ struct LiveChatMessage: Identifiable, Equatable {
     }
 
     func endMeeting() {
-        state.incoming = nil
+        state.incoming = []
         if !speaking { state.outgoing = nil }
     }
 
-    func heard(_ draft: (source: String, translation: String)?) {
-        let message = draft.map { LiveChatMessage(id: "draft-them", mine: false, source: $0.source, translation: $0.translation) }
-        guard state.incoming != message else { return }
-        state.incoming = message
+    func heard(_ messages: [LiveChatMessage]) {
+        if state.incoming != messages { state.incoming = messages }
     }
 
     func said(_ phase: SpeakEngine.Phase, source: String, translation: String, committed: Bool) {
@@ -105,10 +112,9 @@ struct LiveChatMessage: Identifiable, Equatable {
         if committed || (phase == .idle && source.isEmpty && translation.isEmpty) {
             state.outgoing = nil
         } else {
-            let text = source.isEmpty && translation.isEmpty ? L("你正在说…") : source
-            state.outgoing = LiveChatMessage(id: "draft-me", mine: true, source: text, translation: translation)
+            state.outgoing = LiveChatMessage(id: "draft-me", mine: true, source: source, translation: translation)
         }
-        if !source.isEmpty && (phase == .listening || !state.expanded) {
+        if phase == .listening || (!state.expanded && !source.isEmpty) {
             activity()
         } else if phase == .idle && !committed && !translation.isEmpty {
             // A rejected press can have a notice even before any words were recognized.

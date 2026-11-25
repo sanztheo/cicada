@@ -30,6 +30,12 @@ Maintiens la touche de parole (⌥ droite par défaut), parle, puis relâche. So
 
 Les services s’appliquent à l’écoute en direct et à l’interprétation au micro. Les imports de fichiers suivent les réglages habituels.
 
+### Attribuer ton micro dans un appel
+
+Dans le menu à côté du bouton **Turn on mic**, coche **Label microphone speech as mine** si tu utilises ton micro personnel. Ouvre ensuite le micro pour inclure tes phrases dans le chat et la réunion. Ta voix apparaît à droite même quand tu parles sans ⌥. Le son joué par le Mac, par exemple la réponse de ChatGPT, apparaît à gauche. Seul le raccourci déclenche la lecture en mode push-to-talk. Ferme le micro avant de changer son attribution. Décoche cette option pour un micro posé au milieu de plusieurs personnes. L’attribution suit alors les voix de la salle. Quand Cicada écoute le Mac et ton micro personnel ensemble, les mots provisoires du micro restent à droite dans une bulle grise **Microphone**, le temps de vérifier l’écho. La bulle devient bleue quand la phrase est acceptée. Au haut-parleur, le micro peut reprendre la voix distante malgré le filtrage de l’écho.
+
+En mode **Live chat**, une onde apparaît pendant l’appui en attendant les premiers mots. L’original peut évoluer pendant la reconnaissance. La traduction directe s’affiche dès que Soniox en confirme une partie, parfois seulement à la fin de la phrase. Les deux entrées peuvent avoir une bulle en cours en même temps.
+
 ### Afficher le chat pendant un partage
 
 Sélectionne **Dev › Display › Live chat** pour épingler le chat au centre, juste sous la barre des menus de l’écran choisi. Si ce mode est déjà sélectionné, Cicada ouvre la pastille au démarrage. L’historique des réunions reste accessible depuis le menu. Choisir le chat, démarrer la réunion ou prononcer la première phrase ouvre la fenêtre de 560 × 250 points. En mode chat, les phrases en cours apparaissent dans les bulles sous l’encoche. Elle garde sa taille pendant les pauses et après la réunion. Trois secondes après les derniers mots, l’opacité du fond passe de 82 % à 50 %. Elle remonte à 82 % dès que quelqu’un reparle ou que tu survoles le chat.

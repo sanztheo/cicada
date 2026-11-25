@@ -1683,3 +1683,4 @@
 "请检查 Soniox 密钥和模型后重新开始" = "Check your Soniox connection, key and model, then try again.";
 "ElevenLabs 无法播放，请检查密钥、模型和声音" = "ElevenLabs could not play the translation. Check the key, model and voice.";
 "松开发言键后播放译文" = "Translations play after you release the talk key.";
+"麦克风里的发言记为我" = "Label microphone speech as mine";

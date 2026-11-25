@@ -38,8 +38,9 @@ enum RecordList {
     /// heard one side reads as before.
     static func heardBoth(_ lines: [TranscriptLine]) -> Bool {
         var room = false, mac = false
-        for l in lines where l.speaker == "them" {
-            if l.via == "room" { room = true } else { mac = true }
+        for line in lines {
+            if line.via == "room" { room = true }
+            else if line.speaker == "them" { mac = true }
             if room && mac { return true }
         }
         return false

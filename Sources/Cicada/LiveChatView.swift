@@ -55,7 +55,7 @@ private struct LiveChatHistory: View {
                         }
                     }
                     ForEach(state.standalone) { row($0) }
-                    if let incoming = state.incoming { row(incoming) }
+                    ForEach(state.incoming) { row($0) }
                     if let outgoing = state.outgoing { row(outgoing) }
                     Color.clear.frame(height: 1).bottomMarker().id("chat-bottom")
                 }
@@ -130,7 +130,10 @@ private struct LiveChatBubble: View {
     var body: some View {
         let color: Color
         let author: String
-        if message.mine {
+        if message.checkingEcho {
+            color = Color(white: 0.30)
+            author = L("麦克风")
+        } else if message.mine {
             color = Color(red: 0.17, green: 0.41, blue: 0.83)
             author = L("你")
         } else if let voice = message.voice, voice >= 0 {
@@ -145,15 +148,22 @@ private struct LiveChatBubble: View {
         let showBoth = subtitles == "both" && !original.isEmpty && !translation.isEmpty && original != translation
         let primary = (subtitles == "original" && !original.isEmpty) || translation.isEmpty ? original : translation
         return VStack(alignment: .leading, spacing: 3) {
-            if !message.mine {
+            if message.checkingEcho || !message.mine {
                 Text(verbatim: author).font(.system(size: 12, weight: .medium)).padding(.leading, 3)
             }
             VStack(alignment: .leading, spacing: 2) {
                 if showBoth {
                     Text(verbatim: original).font(.system(size: 12)).foregroundStyle(.white.opacity(0.86))
                 }
-                Text(verbatim: primary).font(.system(size: 16))
-                    .accessibilityLabel(Text(verbatim: message.mine ? L("你：\(primary)") : primary))
+                if message.waitingForWords {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 30, height: 19)
+                        .accessibilityLabel(Text("你正在说…"))
+                } else {
+                    Text(verbatim: primary).font(.system(size: 16))
+                        .accessibilityLabel(Text(verbatim: message.mine && !message.checkingEcho ? L("你：\(primary)") : primary))
+                }
             }
             .padding(.horizontal, 11).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(subdued ? 0.58 : 0.90)))

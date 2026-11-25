@@ -25,9 +25,16 @@ struct SonioxTranscriptTests {
         {"tokens":[{"text":"Hello","is_final":true,"language":"en","start_ms":100,"end_ms":800},
                    {"text":"Salut","is_final":false,"language":"fr","translation_status":"translation"}]}
         """)
-        #expect(transcript.consume(draft).first?.translation == "Salut")
+        let first = try #require(transcript.consume(draft).first)
+        #expect(first.text == "Hello" && first.translation == nil)
+        let stable = try reply("""
+        {"tokens":[{"text":"Bon","is_final":true,"language":"fr","translation_status":"translation"},
+                   {"text":"soir","is_final":false,"language":"fr","translation_status":"translation"}]}
+        """)
+        #expect(transcript.consume(stable).first?.translation == "Bon")
+        #expect(transcript.consume(try reply(#"{"tokens":[]}"#)).first?.translation == "Bon")
         let end = try reply("""
-        {"tokens":[{"text":"Bonjour","is_final":true,"language":"fr","translation_status":"translation"},
+        {"tokens":[{"text":"jour","is_final":true,"language":"fr","translation_status":"translation"},
                    {"text":"<end>","is_final":true}]}
         """)
         let line = try #require(transcript.consume(end).first)

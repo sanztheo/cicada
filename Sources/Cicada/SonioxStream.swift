@@ -54,6 +54,7 @@ struct SonioxTranscript {
             if token.text == "<end>" || token.text == "<fin>" {
                 if token.is_final {
                     if let line = piece(final: true) { pieces.append(line) }
+                    draftTokens.removeAll()
                     self = SonioxTranscript()
                 }
             } else if token.is_final {
@@ -67,7 +68,9 @@ struct SonioxTranscript {
             self = SonioxTranscript()
         } else {
             var draft = self
-            for token in draftTokens { draft.append(token) }
+            // Source words can arrive immediately. Only confirmed translation tokens stay on screen
+            // through a revision; the service may withdraw the entire provisional translation.
+            for token in draftTokens where token.translation_status != "translation" { draft.append(token) }
             if let line = draft.piece(final: false) { pieces.append(line) }
         }
         return pieces

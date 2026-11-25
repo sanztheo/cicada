@@ -37,7 +37,9 @@ final class AppModel: ObservableObject {
     /// The meeting's last 30 s, its lines and their translations, for 不用按键 to tell its echo.
     private var recentMeeting: [EchoMatch.Heard] = []
     private var recentMeetingSegs: [Int: (start: Double, end: Double)] = [:]
-    private(set) var heldRoom: [(id: Int, seg: Segment, duration: Double, heard: EchoMatch.Heard)] = []
+    private(set) var heldRoom: [(id: Int, seg: Segment, duration: Double, heard: EchoMatch.Heard)] = [] {
+        didSet { updateChatHearing() }
+    }
     /// What each engine shows as the line in progress, and when it last changed.
     private var liveMain = (src: "", dst: "", at: Date.distantPast)
     private var liveRoom = (src: "", dst: "", at: Date.distantPast)
@@ -201,7 +203,9 @@ final class AppModel: ObservableObject {
     private var lastHeard: (seg: Segment, line: String)?
     /// A line that may carry on `lastHeard`, waiting to hear whose voice it is; its translation if
     /// that comes first.
-    private var heldJoin: (seg: Segment, t: Double, translation: String?)?
+    private var heldJoin: (seg: Segment, t: Double, translation: String?)? {
+        didSet { updateChatHearing() }
+    }
     /// Lines the record's own recognizer is still settling (`ListenEngine.onRefined`): each line's
     /// meeting and its segments in order (several after a join), each with the live recognizer's text.
     private var refining: [String: (session: String, segs: [(id: Int, text: String, settled: String?)])] = [:]
@@ -769,6 +773,8 @@ final class AppModel: ObservableObject {
             debugLog("mic auto-on: user started listening")
         }
         let session = store.begin()
+        listen.resetMeetingSpeech()
+        roomListen.resetMeetingSpeech()
         liveChat.beginMeeting(session.id)
         diagnostics.begin()
         speakers.reset()
@@ -833,7 +839,7 @@ final class AppModel: ObservableObject {
         }
         // Read the whole meeting for names once more (the id outlives store.end).
         let ended = store.liveID
-        store.end(at: endedAt, heardSpeech: listen.heardSpeech)
+        store.end(at: endedAt, heardSpeech: listen.heardSpeech || roomListen.heardSpeech)
         if settings.speakerVoices, let ended { speakerNamer.guess(ended, force: true) }
         notes.finish()
         if let ended { folderExport.ended(ended) }
@@ -977,6 +983,7 @@ final class AppModel: ObservableObject {
             overlay.hide()
             notesWindow.hide()
             liveChat.show(subtitles: subtitles, openHistory: force || listen.isRunning)
+            updateChatHearing()
         case "bar":
             notesWindow.hide()
             if listen.isRunning { overlay.show() }
@@ -1057,8 +1064,11 @@ final class AppModel: ObservableObject {
         settings.listenSource = value
         if listen.isRunning && settings.hearsRoom { store.markLiveInRoom() }
         // The main engine changes only between the Mac and the room alone; "both" adds the room side.
-        if wasRoomOnly != settings.listensToRoom { listen.listenSourceChanged() }
         if listen.isRunning {
+            if wasRoomOnly != settings.listensToRoom {
+                listen.listenSourceChanged()
+                guard listen.isRunning else { stop(); return }
+            }
             if settings.hearsBoth { startRoomSide() } else { stopRoomSide() }
         } else if on {
             // Asking for the room is asking to listen.
@@ -1694,6 +1704,7 @@ final class AppModel: ObservableObject {
         heldRoom = []
         for h in held { recordRoom(h) }
         liveRoom = ("", "", .distantPast)
+        updateChatHearing()
         debugLog("hybrid: room side stopped")
     }
 
@@ -1819,13 +1830,27 @@ final class AppModel: ObservableObject {
         liveTranslation = dst
         if !src.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { heardSpeech(); heardWords() }
         if settings.displayMode == "chat", listen.isRunning {
-            liveChat.heard((room ? roomListen : listen).chatDraft)
+            updateChatHearing()
             return
         }
         guard settings.displayMode == "bar" else { return }
         overlay.clearStatus()
         let shown = displayed(visible, dst)
         overlay.setSubtitle(source: shown.source, translation: shown.translation)
+    }
+
+    private func updateChatHearing() {
+        guard settings.displayMode == "chat", listen.isRunning else { return }
+        // Keep the finalized bubble visible while the existing echo and speaker checks decide its fate.
+        var pending = heldRoom.map { LiveChatMessage.heard($0.seg, checkingEcho: true) }
+        if let heldJoin {
+            var segment = heldJoin.seg
+            if let translation = heldJoin.translation { segment.translation = translation }
+            pending.append(.heard(segment))
+        }
+        if let draft = listen.chatDraft { pending.append(.heard(draft)) }
+        if let draft = roomListen.chatDraft { pending.append(.heard(draft, checkingEcho: true)) }
+        liveChat.heard(pending)
     }
 
     private func recordHeard(_ seg: Segment, duration: Double) {
@@ -1838,7 +1863,7 @@ final class AppModel: ObservableObject {
             if let line = lineForSegment[held.seg.id] { voicePending.insert(line) }
         }
         guard let prev = lastHeard, store.session(store.liveID ?? "")?.lines.last?.id == prev.line,
-              prev.seg.clock == seg.clock, prev.seg.sourceCode == seg.sourceCode,
+              prev.seg.clock == seg.clock, prev.seg.sourceCode == seg.sourceCode, prev.seg.input == seg.input,
               // macOS 14/15: the older recognizer ends a line only at a real pause and often drops
               // the full stop, so a missing one says nothing; only a line Cicada cut is a half sentence.
               !Recognition.legacy || prev.seg.cut, !prev.seg.split,
@@ -1903,7 +1928,8 @@ final class AppModel: ObservableObject {
         store.setSource(lineID: prev.line, text)
         if let id = store.liveID { fixes.applyKnown(lineID: prev.line, in: id) }
         trackRefining(seg, line: prev.line)
-        listen.join(seg.id, into: prev.seg.id, text: text)
+        let engine = seg.id >= ListenEngine.roomIDs ? roomListen : listen
+        engine.join(seg.id, into: prev.seg.id, text: text)
         contentLog("JOIN \(prev.line) += \(seg.text)")
         heardWords()
     }
@@ -1912,11 +1938,9 @@ final class AppModel: ObservableObject {
         lineCounter += 1
         let id = "h\(lineCounter)-\(seg.id)"
         lineForSegment[seg.id] = id
-        store.append(TranscriptLine(id: id, t: t, speaker: "them", src: seg.text, dst: translation ?? seg.translation,
+        store.append(TranscriptLine(id: id, t: t, speaker: seg.input.speaker, src: seg.text, dst: translation ?? seg.translation,
                                     srcLang: seg.sourceCode, dstLang: listen.resolvedTarget,
-                                    // 会议室 alone too: a meeting switched to it from 电脑和会议室
-                                    // would otherwise mark its later room lines 线上.
-                                    via: seg.id >= ListenEngine.roomIDs || settings.listensToRoom ? "room" : nil))
+                                    via: seg.input.via))
         if let live = store.liveID { fixes.applyKnown(lineID: id, in: live) }
         trackRefining(seg, line: id)
         var kept = seg
@@ -2170,6 +2194,7 @@ final class AppModel: ObservableObject {
         // A meeting without audio (no tap, no recognizer), fed lines by `heard:`.
         case "silentListen": ListenEngine.silentLocale = arg.isEmpty || arg == "off" ? nil : arg
         case "heard": listen.debugHeard(arg)
+        case "heardRoom": roomListen.debugHeard(arg)
         case "askNames": settings.askNames = arg != "off"
         case "vocabAdd":   // vocabAdd:Morpho=莫拉、莫法 (several lines with "|")
             let r = vocabulary.importText(arg.replacingOccurrences(of: "|", with: "\n"))

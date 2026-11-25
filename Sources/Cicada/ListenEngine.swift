@@ -3,11 +3,24 @@ import AVFoundation
 import CoreMedia
 import Network
 
+enum MeetingInput {
+    case computer, personalMic, sharedMic
+
+    init(microphone: Bool, personal: Bool) {
+        if microphone { self = personal ? .personalMic : .sharedMic }
+        else { self = .computer }
+    }
+
+    var via: String? { self == .computer ? nil : "room" }
+    var speaker: String { self == .personalMic ? "me" : "them" }
+}
+
 struct Segment {
     let id: Int
     var text: String
     let sourceCode: String
     var translation: String?
+    var input: MeetingInput = .computer
     /// The sentence's audio, 16 kHz mono, when telling voices apart is on.
     var voiceSamples: [Float]? = nil
     /// Where it sits in the recognizer's audio (seconds; `clock` changes with each new recognizer),
@@ -233,11 +246,15 @@ final class ListenEngine {
         return [carry.text, volatileText].filter { !$0.isEmpty }.joined(separator: joiner(for: activeLang?.code ?? ""))
     }
 
+    // Old callbacks and lines held for an echo check must retain their capture source.
+    private var meetingInput: MeetingInput = .computer
+
     /// Final lines already appear in the meeting record; chat only needs the unfinished words.
-    var chatDraft: (source: String, translation: String)? {
+    var chatDraft: Segment? {
         let text = shownDraft
-        guard !hidesSource, !text.isEmpty else { return nil }
-        return (text, volatileTranslation)
+        guard isRunning, !hidesSource, !text.isEmpty else { return nil }
+        return Segment(id: nextSegmentID, text: text, sourceCode: activeLang?.code ?? "auto",
+                       translation: volatileTranslation, input: meetingInput)
     }
     /// Final transcript time and how long after the last word it came, per segment, until its translation lands.
     private var finalTiming: [Int: (at: Date, recognize: Double?)] = [:]
@@ -379,6 +396,8 @@ final class ListenEngine {
             setStatus(L("请先在设置 › AI 服务里填入 Ling key"))
             return
         }
+        meetingInput = MeetingInput(microphone: role == .room || settings.listensToRoom,
+                                    personal: settings.personalMicrophone)
         detection.start()
         unconfirmed = []
         lastWordsAt = .distantPast
@@ -426,8 +445,12 @@ final class ListenEngine {
         fetchSecondModel(besides: initial)
     }
 
-    /// The last run heard speech (a few seconds of it), read when its meeting ends.
+    /// A meeting may open and close either input several times before its recording is saved.
     private(set) var heardSpeech = false
+
+    func resetMeetingSpeech() {
+        heardSpeech = false
+    }
 
     func stop() {
         // Lines still waiting for the language are recorded rather than dropped: the meeting
@@ -436,7 +459,9 @@ final class ListenEngine {
         flushCarry()
         if sourceMode == .auto, !recordable, !mismatch { flushUnconfirmed() }
         unconfirmed = []
-        heardSpeech = isRunning && (router.stats().voicedTotal >= 3 || firstHeardAt != nil)
+        if isRunning, router.stats().voicedTotal >= 3 || firstHeardAt != nil {
+            heardSpeech = true
+        }
         isRunning = false
         generation += 1
         cloud = nil
@@ -629,9 +654,12 @@ final class ListenEngine {
 
     /// 听哪里 changed: while listening, the new source takes over in the same meeting.
     func listenSourceChanged() {
+        guard isRunning else { return }
         debugLog("listen source=\(settings.listenSource)")
-        reconnectAudio()
-        onStateChange?()
+        // The legacy main engine changes physical source. A result from the old recognizer
+        // cannot identify a speaker on the new one; its generation and buffered audio end here.
+        stop()
+        start()
     }
 
     // MARK: Settings changes
@@ -871,7 +899,7 @@ final class ListenEngine {
             let given = translationOff() || wrongTarget || result.translation == text && result.language != resolvedTarget ? nil : result.translation
             let provisional = recognizer is SonioxStream ? given : given ?? (volatileTranslation.isEmpty ? nil : volatileTranslation)
             var seg = Segment(id: nextSegmentID, text: text, sourceCode: result.language ?? activeLang?.code ?? "auto",
-                              translation: provisional)
+                              translation: provisional, input: meetingInput)
             seg.start = start
             seg.end = end
             seg.clock = gen
@@ -880,7 +908,7 @@ final class ListenEngine {
             cutAsked = false
             seg.refining = refiner != nil
             if refiner != nil { settled(refiner!.emitted(id: seg.id, start: seg.start, end: seg.end, text: seg.text)) }
-            if settings.speakerVoices {
+            if settings.speakerVoices, seg.input != .personalMic {
                 seg.voiceSamples = router.voiceSamples(from: start, to: end)
             }
             nextSegmentID += 1
@@ -1425,7 +1453,7 @@ final class ListenEngine {
     /// The record, its translation and fixes, the bar and the notes window all follow.
     func debugHeard(_ text: String) {
         guard isRunning, Self.silentLocale != nil, let lang = activeLang else { return }
-        let seg = Segment(id: nextSegmentID, text: text, sourceCode: lang.code, translation: nil)
+        let seg = Segment(id: nextSegmentID, text: text, sourceCode: lang.code, translation: nil, input: meetingInput)
         nextSegmentID += 1
         segments.append(seg)
         if segments.count > 8 { segments.removeFirst(segments.count - 8) }

@@ -933,7 +933,7 @@ struct TranscriptListView<Partial: View>: View, Equatable {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     if !label {
-                    } else if l.speaker == "me" { MeTag() }
+                    } else if l.speaker == "me" { MeTag(line: l) }
                     else if onAssign != nil, !voices.isEmpty {
                         Button { assigning = assigning == l.id ? nil : l.id } label: {
                             HStack(spacing: 4) {
