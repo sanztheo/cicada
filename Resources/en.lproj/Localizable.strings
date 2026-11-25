@@ -1600,6 +1600,7 @@
 "我说和对方说" = "My language and theirs";
 "正在听你说" = "Listening to you";
 "没听清，按住再说一次" = "Didn't catch that. Hold and say it again";
+"麦克风还没就绪就松开了，请稍微按久一点" = "The key was released before the microphone was ready. Hold it a little longer.";
 "没翻译出来，再说一次" = "Couldn't translate that. Say it again";
 "请说…" = "Speak now…";
 "正在念给对方" = "Reading it out";

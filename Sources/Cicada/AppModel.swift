@@ -286,13 +286,13 @@ final class AppModel: ObservableObject {
         // then hear the virtual mic anyway. It pauses while 打开麦克风 is on: the room shares the unit and
         // is heard unprocessed, and everyone at the table would be interpreted as me.
         handsFreeSetting = Publishers.CombineLatest4(settings.$speakHandsFree, settings.$listenSource, settings.$speakEnabled, $running)
-            .sink { [weak self] on, _, _, _ in
+            .sink { [weak self] _, _, _, _ in
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let self else { return }
-                        self.speak.handsFree = on && self.settings.speakEnabled && !self.settings.hearsRoom && self.running
-                        self.speak.keepUnit = self.settings.speakEnabled && self.running
+                        self.speak.handsFree = self.settings.speakHandsFree && self.settings.speakEnabled && !self.settings.hearsRoom && self.running
                         self.speak.refreshHandsFree()
+                        self.updateTalkMicStandby()
                     }
                 }
             }
@@ -557,7 +557,7 @@ final class AppModel: ObservableObject {
         checkProblem()
         let silent = micOn && (settings.hearsBoth ? roomListen : listen).roomMicSilent
         if silent != roomMicSilent { roomMicSilent = silent }
-        overlay.setMic(micOn)
+        overlay.setMic(settings.pushToTalkOnly ? nil : micOn)
         if listen.modelProblem != modelProblem { modelProblem = listen.modelProblem }
         if listen.blockedByModel != modelBlocked { modelBlocked = listen.blockedByModel }
         let notInstalled = !ask.isEmpty && listen.mismatch && ask.allSatisfy { !listen.candidates.contains($0) }
@@ -600,6 +600,22 @@ final class AppModel: ObservableObject {
     func refreshSystemMic() {
         let state = systemMic.refresh(wanted: wantsSystemMic)
         if state != systemMicState { systemMicState = state }
+        updateTalkMicStandby()
+    }
+
+    private func updateTalkMicStandby() {
+        guard settings.pushToTalkOnly, micStatus == .authorized else {
+            speak.keepTalkMicReady = false
+            return
+        }
+        // Even a stopped echo unit can quiet a physical mic used by another app (#24).
+        var virtualMicInUse = micUsers.contains { $0.state == .virtualMic }
+        if running, case .switched = systemMicState { virtualMicInUse = true }
+        let physicalMicInUse = micUsers.contains { user in
+            if case .otherMic = user.state { return true }
+            return false
+        }
+        speak.keepTalkMicReady = virtualMicInUse && !physicalMicInUse
     }
 
     /// Switches or lets go to match the settings (同声传译, 自动切换, 声音输出到).
@@ -628,7 +644,7 @@ final class AppModel: ObservableObject {
 
     func refreshMicUsers() {
         // Compare against where our voice actually goes: 高级 › 声音输出到 can point elsewhere.
-        let target = outputs.first { !settings.speakOutput.isEmpty && $0.uid == settings.speakOutput } ?? virtualMic
+        let target = outputs.first { $0.isVirtualMic && $0.uid == settings.speakOutput } ?? virtualMic
         let users = virtualMic != nil ? target.map { MicUsers.current(virtualMic: $0.id) } ?? [] : []
         if users != micUsers { micUsers = users }
     }
@@ -767,7 +783,8 @@ final class AppModel: ObservableObject {
         // Starting by hand means the meeting is here now: open the room microphone too, when the
         // user turned on 开始听时打开麦克风 (设置 › 通用).
         micAutoOpened = false
-        if byUser, settings.autoMicOnStart, settings.listenSource == "system" {
+        if settings.pushToTalkOnly && micOn { settings.listenSource = "system" }
+        if byUser, settings.autoOpenMeetingMic, settings.listenSource == "system" {
             settings.listenSource = Recognition.legacy ? "room" : "both"
             micAutoOpened = true
             debugLog("mic auto-on: user started listening")
@@ -1053,6 +1070,7 @@ final class AppModel: ObservableObject {
     }
 
     func setMic(_ on: Bool) {
+        guard !on || !settings.pushToTalkOnly else { return }
         let value = !on ? "system" : Recognition.legacy ? "room" : "both"
         // Asking for the room is asking to listen, even with the switch already on.
         if value == settings.listenSource {
@@ -1140,8 +1158,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setHandsFree(_ on: Bool) {
+        settings.speakHandsFree = on
+        applyPushToTalkMode()
+    }
+
+    private func applyPushToTalkMode() {
+        if settings.pushToTalkOnly {
+            speak.handsFree = false
+            if micOn { setMic(false) }
+        }
+        overlay.setMic(settings.pushToTalkOnly ? nil : micOn)
+    }
+
     func enableSpeaking(_ on: Bool) {
         settings.speakEnabled = on
+        applyPushToTalkMode()
         if on { settings.speakConfirmed = true }
         objectWillChange.send()
         if on {
@@ -1421,7 +1453,7 @@ final class AppModel: ObservableObject {
             // room microphone, or the user's own voice is missing from the record (Tencent Meeting,
             // Zoom, …).
             // Once a meeting: closing the microphone by hand during the call must stay closed.
-            if settings.autoMicOnStart, !micAutoOpened, settings.listenSource == "system", !calls.isEmpty {
+            if settings.autoOpenMeetingMic, !micAutoOpened, settings.listenSource == "system", !calls.isEmpty {
                 micAutoOpened = true
                 debugLog("mic auto-on: a meeting app started a call")
                 setMic(true)
@@ -2580,7 +2612,7 @@ final class AppModel: ObservableObject {
         case "speakFile": speak.speakFile(URL(fileURLWithPath: arg))
         // talkDown / talkUp: the talk key held and let go, with the real microphone (audio tests).
         // handsFree:on|off: 不用按键, as the setting.
-        case "handsFree": settings.speakHandsFree = arg != "off"
+        case "handsFree": setHandsFree(arg != "off")
         case "handsFreeDump": speak.setHandsFreeDump(arg.isEmpty ? nil : arg)
         case "talkDown": speak.pressBegan()
         case "talkUp": speak.pressEnded()

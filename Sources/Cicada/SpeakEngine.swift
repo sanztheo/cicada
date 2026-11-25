@@ -185,7 +185,15 @@ final class SpeakEngine {
     /// app: on with the setting, off while 打开麦克风 hears the room (that unit is shared, and the
     /// room is heard unprocessed). The talk key still works and pauses the detector while held.
     var handsFree = false {
-        didSet { if handsFree != oldValue { refreshHandsFree() } }
+        didSet {
+            guard handsFree != oldValue else { return }
+            if !handsFree {
+                segments.removeAll()
+                if pressHandsFree && phase != .idle { cancelSpeech() }
+                else if phase == .idle { onLive?(.idle, "", "") }
+            }
+            refreshHandsFree()
+        }
     }
     /// A hands-free sentence with less voice than this is not sent: every real sentence had ≥ 1.95 s,
     /// what Ming made a sentence of out of the meeting's leftovers ("啊！我要吓死你了！") 0.48 s.
@@ -242,7 +250,7 @@ final class SpeakEngine {
                     guard let self else { return }
                     // Stopped while it was being made: nobody else may be left to give it back.
                     guard self.handsFreeInput == d else {
-                        if self.phase == .idle { self.unitIdle() }
+                        if self.phase != .listening { self.unitIdle() }
                         return
                     }
                     let queue = self.micQueue
@@ -306,10 +314,11 @@ final class SpeakEngine {
     }
 
     private func voiceBegan() {
-        if phase == .idle { onLive?(.listening, "", "") }
+        if handsFree, phase == .idle { onLive?(.listening, "", "") }
     }
 
     private func voiceEnded(_ buffers: [AVAudioPCMBuffer], start: Date, cut: Bool) {
+        guard handsFree else { return }
         debugLog(String(format: "hands-free: sentence of %.1f s%@", Date().timeIntervalSince(start), cut ? " (cut, still talking)" : ""))
         segments.append((buffers, start, Date()))
         nextSegment()
@@ -317,7 +326,7 @@ final class SpeakEngine {
 
     /// Sends the oldest sentence heard on as a press would be, once the one before it is translated.
     private func nextSegment() {
-        guard phase == .idle || phase == .speaking, !segments.isEmpty else { return }
+        guard handsFree, phase == .idle || phase == .speaking, !segments.isEmpty else { return }
         guard let input = beginUtterance() else {
             debugLog("hands-free: transcriber not ready, sentence dropped")
             segments.removeFirst()
@@ -408,18 +417,26 @@ final class SpeakEngine {
         }
     }
 
-    /// While a meeting is listened to with 同声传译 on, the echo-cancelling unit is made ahead and
-    /// kept between presses. Made at each press, a press lost its first ~1.4 s and the fresh unit let
-    /// the meeting from the speakers through as what I said: a press nobody spoke in sent the meeting
-    /// back into it (audio-test, meeting at 56 %: 1.8.0 100 % and 0 sent; made per press 14–87 % and
-    /// 2 of 3 silent presses sent). The meeting app hears the virtual mic then, so the built-in mic
-    /// it mutes for other apps (#24) matters only outside a meeting, when it is let go of.
-    var keepUnit = false {
-        didSet { if keepUnit != oldValue, phase == .idle { unitIdle() } }
+    /// A stopped unit avoids rebuilding echo cancellation at each key-down. Only attach starts capture.
+    var keepTalkMicReady = false {
+        didSet {
+            guard oldValue != keepTalkMicReady else { return }
+            if phase == .idle || (!keepTalkMicReady && phase != .listening) { unitIdle() }
+        }
     }
 
     private func unitIdle() {
-        if keepUnit, echoCancel, let d = echoInput { voiceMic.prepare(input: d) } else if !voiceMic.inUse { voiceMic.release() }
+        guard handsFreeInput == nil else { return }
+        guard keepTalkMicReady, echoCancel, let device = echoInput else { voiceMic.release(); return }
+        voiceMic.prepare(input: device) { [weak self] ready in
+            guard ready else { return }
+            Task { @MainActor in
+                // The meeting can end while Core Audio is still constructing the unit.
+                guard let self, !self.keepTalkMicReady, self.phase != .listening,
+                      self.handsFreeInput == nil else { return }
+                self.voiceMic.release()
+            }
+        }
     }
 
     func cancelSpeech() {
@@ -545,7 +562,9 @@ final class SpeakEngine {
         pressStarted = Date()
         pressHandsFree = false
         phase = .listening
-        onLive?(.listening, "", "")
+        // In room mode this callback also mutes the room mic. In push-to-talk the waveform
+        // signals that the physical input is ready, which may take a moment on a cold start.
+        if !settings.pushToTalkOnly { onLive?(.listening, "", "") }
         startMic(format: input.format, input: input)
     }
 
@@ -562,22 +581,23 @@ final class SpeakEngine {
         volatile = ""
         phase = .idle
         onLive?(.idle, "", "")
-        debugLog("speak: press cancelled (chord)")
+        debugLog("speak: press cancelled")
     }
 
     func pressEnded() {
         guard phase == .listening else { return }
         debugLog("speak: press ended")
-        releasedAt = Date()
-        let id = pressID
-        if utterance?.input is SonioxStream {
-            finishUtterance()
+        if micQueue.sync(execute: { pressSamples.isEmpty }) {
+            pressCancelled()
+            debugLog("speak: released before the first audio buffer")
+            probe?.released = Date()
+            probe?.finish()
+            probe = nil
+            onNotice?(L("麦克风还没就绪就松开了，请稍微按久一点"))
             return
         }
-        // Keep the mic open a moment so the last syllable isn't cut off.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            MainActor.assumeIsolated { if self?.pressID == id, self?.phase == .listening { self?.finishUtterance() } }
-        }
+        releasedAt = Date()
+        finishUtterance()
     }
 
     /// Debug path: feed an audio file as if it were spoken into the mic.
@@ -627,7 +647,7 @@ final class SpeakEngine {
 
     private func startMic(format: AVAudioFormat, input cont: RecognitionStream) {
         if echoCancel || voiceMic.inUse, let device = echoInput {
-            // Made now, not ahead (see `VoiceMic`): the press hears from when it is ready.
+            // prepare also rechecks the devices in case the user changed headsets.
             pressPlain = false
             let press = pressStarted
             voiceMic.prepare(input: device) { [weak self] ok in
@@ -641,7 +661,7 @@ final class SpeakEngine {
     private func attachPress(_ press: Date, ok: Bool, device: AudioObjectID, format: AVAudioFormat, input cont: RecognitionStream) {
         // The key was let go of before the unit was ready: the phase going idle found nothing to give back.
         guard phase == .listening, pressStarted == press, utterance?.input === cont else {
-            if phase == .idle { unitIdle() }
+            if phase != .listening { unitIdle() }
             return
         }
         let conv = converter
@@ -658,6 +678,7 @@ final class SpeakEngine {
         debugLog(String(format: "speak: mic %@ after %.2f s", started ? "with echo cancellation" : "plain, echo cancellation failed",
                         Date().timeIntervalSince(press)))
         if !started { startPlainMic(format: format, input: cont) }
+        else if settings.pushToTalkOnly { onLive?(.listening, "", "") }
     }
 
     private func startPlainMic(format: AVAudioFormat, input cont: RecognitionStream) {
@@ -676,8 +697,8 @@ final class SpeakEngine {
         // the real hardware format or AVAudioEngine raises an Objective-C exception.
         let inFormat = inputNode.inputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
+            pressCancelled()
             onNotice?(L("没有可用的麦克风"))
-            phase = .idle
             return
         }
         inputNode.removeTap(onBus: 0)
@@ -696,10 +717,12 @@ final class SpeakEngine {
         }
         do {
             try mic.start()
+            if settings.pushToTalkOnly { onLive?(.listening, "", "") }
         } catch {
+            inputNode.removeTap(onBus: 0)
+            pressCancelled()
             debugLog("mic start failed: \(error)")
             onNotice?(L("麦克风无法启动，请在系统设置里允许\(appDisplayName)使用麦克风"))
-            phase = .idle
         }
     }
 
@@ -750,6 +773,7 @@ final class SpeakEngine {
 
     private func finishUtterance() {
         stopMic()
+        if settings.pushToTalkOnly && !keepTalkMicReady { voiceMic.release() }
         phase = .translating
         let probe = self.probe
         self.probe = nil
@@ -829,6 +853,7 @@ final class SpeakEngine {
             }
             if !text.isEmpty { onLive?(.translating, text, "") }
             let heard = await (early ?? startMing()).value
+            guard id == pressID else { probe?.finish(); return }
             let recognizer = u.input is SonioxStream ? "Soniox" : "on-device"
             debugLog("speak: \(recognizer) heard \(text.count) chars, Ming \(heard.map { "\($0.original.count)" } ?? "-") chars")
             if let heard { text = heard.original }
@@ -837,6 +862,7 @@ final class SpeakEngine {
             let short = EchoMatch.units(text).count < 3
             var echo = false
             if pressHandsFree, !text.isEmpty, !short { echo = await meetingSaid?(text, pressStarted, released) == true }
+            guard id == pressID else { probe?.finish(); return }
             if pressHandsFree, !text.isEmpty, short || echo {
                 debugLog("hands-free: \(text.count) chars, \(short ? "too short" : "the meeting's own words"): nothing sent")
                 phase = .idle

@@ -434,14 +434,18 @@ extension MenuPanelView {
 // MARK: - 麦克风 in the panel
 
 extension MenuPanelView {
-    private var micCaption: String { settings.personalMicrophone ? L("麦克风里的发言记为我") : L("桌边的人说话也会记下") }
+    private var micCaption: String {
+        if settings.pushToTalkOnly { return L("只在按住说话键时录音") }
+        if !model.micOn { return L("关着 · 只听电脑声音") }
+        return settings.personalMicrophone ? L("麦克风里的发言记为我") : L("桌边的人说话也会记下")
+    }
 
     /// 打开麦克风: the people in the room join the meeting the Mac is hearing.
     var micRow: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("麦克风").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
-                Text(model.micOn ? micCaption : L("关着 · 只听电脑声音"))
+                Text(micCaption)
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -461,8 +465,18 @@ struct MicButton: View {
     let inHeader: Bool
 
     var body: some View {
+        if settings.pushToTalkOnly {
+            Label(L("按住 \(settings.talkKey.display) 说话"), systemImage: "keyboard")
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.secondary)
+                .help(L("只在按住说话键时录音"))
+        } else {
+            microphoneControls
+        }
+    }
+
+    private var microphoneControls: some View {
         let on = model.micOn
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             Button { model.setMic(!on) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: on ? "mic.fill" : "mic")

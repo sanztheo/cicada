@@ -37,20 +37,39 @@ struct SpeakMicTests {
         let previousHost = Recognition.host
         Recognition.host = { _, _ in frames }
         defer { Recognition.host = previousHost }
-        let speak = SpeakEngine(settings: AppSettings(), voiceMic: VoiceMic())
+        let suite = "cicada-press-mic-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.speakEnabled = true
+        let voiceMic = VoiceMic()
+        let speak = SpeakEngine(settings: settings, voiceMic: voiceMic)
         speak.inputDevice = { device }
-        speak.probe = SpeakProbe()
-        defer { speak.pressCancelled() }
+        defer {
+            speak.pressCancelled()
+            speak.keepTalkMicReady = false
+        }
         await speak.prepare()
+        speak.keepTalkMicReady = true
+        let ready: Bool = await withCheckedContinuation { continuation in
+            voiceMic.prepare(input: device.id) { continuation.resume(returning: $0) }
+        }
+        try #require(ready)
+        #expect(!voiceMic.inUse)
         for _ in 0..<3 {
             let before = frames.count
+            speak.probe = SpeakProbe()
             speak.pressBegan()
             try #require(speak.phase == .listening)
             try await Task.sleep(for: .milliseconds(500))
-            // Cancel rather than release: this regression test must never translate or play audio.
-            speak.pressCancelled()
             #expect(frames.count > before)
-            #expect(speak.phase == .idle)
+            // The recognizer only counts frames and returns no text, so nothing can be spoken.
+            speak.pressEnded()
+            let afterRelease = frames.count
+            try await Task.sleep(for: .milliseconds(250))
+            try #require(speak.phase == .idle)
+            #expect(!voiceMic.inUse)
+            #expect(frames.count == afterRelease)
         }
         #expect(AudioDevices.defaultInput?.uid == original.uid)
     }

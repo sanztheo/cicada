@@ -31,9 +31,10 @@ final class OverlayController {
     var onCollapsed: (() -> Void)?
     /// The microphone button while editing.
     var onMic: (() -> Void)?
-    func setMic(_ on: Bool) {
+    func setMic(_ on: Bool?) {
         guard view.micOn != on else { return }
         view.micOn = on
+        panel.invalidateCursorRects(for: view)
         view.needsDisplay = true
     }
     /// Where the pointer is while the bar is open.
@@ -497,7 +498,7 @@ final class OverlayView: NSView {
     /// Translation lines the bar is sized for (1 or 2), so a short line leaves no gap.
     var transLines = 1
     var dragMode: Bool?
-    var micOn = false
+    var micOn: Bool? = false
 
     private let orange = NSColor(srgbRed: 1.0, green: 0.71, blue: 0.62, alpha: 1)
     private let accent = NSColor(srgbRed: 0.91, green: 0.33, blue: 0.17, alpha: 1)
@@ -642,6 +643,7 @@ final class OverlayView: NSView {
             NSColor(calibratedWhite: 0.08, alpha: 1).setStroke()
             p.stroke()
 
+            guard let micOn else { return }
             let m = micRect
             (micOn ? NSColor(srgbRed: 0.99, green: 0.93, blue: 0.906, alpha: 1) : NSColor(calibratedWhite: 0.94, alpha: 1)).setFill()
             NSBezierPath(roundedRect: m, xRadius: 8, yRadius: 8).fill()
@@ -688,7 +690,7 @@ final class OverlayView: NSView {
             return
         }
         let p = convert(event.locationInWindow, from: nil)
-        if hover, micRect.insetBy(dx: -4, dy: -4).contains(p) {
+        if hover, micOn != nil, micRect.insetBy(dx: -4, dy: -4).contains(p) {
             controller?.onMic?()
             return
         }
@@ -713,7 +715,7 @@ final class OverlayView: NSView {
         if hover {
             addCursorRect(barRect, cursor: .openHand)
             addCursorRect(gripRect, cursor: .crosshair)
-            addCursorRect(micRect, cursor: .pointingHand)
+            if micOn != nil { addCursorRect(micRect, cursor: .pointingHand) }
         }
     }
 }

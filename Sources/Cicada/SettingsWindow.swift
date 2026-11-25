@@ -509,7 +509,7 @@ struct SettingsView: View {
                 SettingsRow(title: L("不用按键"),
                             detail: !settings.speakHandsFree ? L("开口就翻译，停顿 1 秒后说出去")
                                 : settings.hearsRoom ? L("打开麦克风时暂停") : model.running ? L("开口就翻译，停顿 1 秒后说出去") : L("开始听会议后生效")) {
-                    Toggle("不用按键", isOn: $settings.speakHandsFree)
+                    Toggle("不用按键", isOn: Binding(get: { settings.speakHandsFree }, set: model.setHandsFree))
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
                 SettingsRow(title: L("说\(settings.speakFromLang.name)，对方听到")) {
@@ -728,8 +728,9 @@ struct SettingsView: View {
                     Toggle("保存会议录音", isOn: $settings.recordAudio)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
-                SettingsRow(title: L("开始听时打开麦克风"), detail: L("关掉后只听电脑声音；开会时再手动打开")) {
-                    Toggle("开始听时打开麦克风", isOn: $settings.autoMicOnStart)
+                SettingsRow(title: L("开始听时打开麦克风"), detail: settings.pushToTalkOnly ? L("只在按住说话键时录音") : L("关掉后只听电脑声音；开会时再手动打开")) {
+                    Toggle("开始听时打开麦克风", isOn: Binding(get: { settings.autoOpenMeetingMic }, set: { settings.autoMicOnStart = $0 }))
+                        .disabled(settings.pushToTalkOnly)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
                 SettingsRow(title: L("说话人识别"), detail: L("按声音标出说话人 1、2…，只在这台 Mac 上处理")) {

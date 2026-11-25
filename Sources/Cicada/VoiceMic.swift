@@ -11,12 +11,10 @@ import CoreAudio
 /// press) share it as consumers, and it runs while anyone is attached.
 ///
 /// The raw unit, because AVAudioEngine's voice processing fails ('bfmt') when the default input is
-/// the virtual mic, which 同声传译 makes it. Not made ahead: while a unit exists in this process, even
-/// stopped, uninitialized or with no device set, every other app's input on the Mac hears almost
-/// nothing (measured from another process: −60 to −72 dB instead of −17 dB; Teams heard nobody,
-/// issue #24). So it is made when needed (1–1.7 s, nearly all of it in AudioComponentInstanceNew;
-/// the talk key's first words wait for it) and let go of as soon as nobody needs it; the plain mic
-/// in this process is starved by it the same way. The room holds it for the whole meeting.
+/// the virtual mic, which 同声传译 makes it. Constructing the unit takes 1–1.7 s, mostly in
+/// AudioComponentInstanceNew. In a call routed through the virtual mic, the talk key can keep
+/// the stopped unit ready without attaching a consumer. Otherwise release it: even a stopped
+/// unit can quiet another app's physical mic (−60 to −72 dB instead of −17 dB, issue #24).
 /// AGC is off (it lifts the room's noise with the voice, which recognition likes less), and other
 /// audio's ducking is set to its minimum: the meeting must stay audible while you talk. Hands-free
 /// (`advancedDucking`) asks for Apple's advanced ducking instead: the meeting drops while you speak.
@@ -279,16 +277,20 @@ final class EchoCancelledRoomMic: AudioSource, @unchecked Sendable {
     }
 
     func start() throws {
-        mic.prepare(input: device.id) { [weak self] ok in
-            guard let self else { return }
-            // Stopped while it was being made: nobody else may be left to give it back.
-            guard !self.lock.withLock({ self.stopped }) else { self.mic.release(); return }
-            let attached = ok && self.mic.attach("room", input: self.device.id, processing: self.processing) { [weak self] buf in self?.deliver(buf) }
-            if !attached {
-                debugLog("room mic: echo cancellation unavailable, plain mic instead")
-                self.onFailed?()
-            } else {
-                debugLog("room mic started \(self.processing ? "with echo cancellation" : "through the unit, bypassed"): \(self.device.name)")
+        mic.prepare(input: device.id) { [self] ok in
+            // ListenEngine stops the room on the main thread when push-to-talk takes over.
+            // Serialize attachment with that stop, including when device preparation finishes late.
+            DispatchQueue.main.async { [self] in
+                guard !lock.withLock({ stopped }) else { mic.release(); return }
+                let attached = ok && mic.attach("room", input: device.id, processing: processing) { [weak self] buf in
+                    self?.deliver(buf)
+                }
+                if attached {
+                    debugLog("room mic started \(processing ? "with echo cancellation" : "through the unit, bypassed"): \(device.name)")
+                } else {
+                    debugLog("room mic: echo cancellation unavailable, plain mic instead")
+                    onFailed?()
+                }
             }
         }
     }

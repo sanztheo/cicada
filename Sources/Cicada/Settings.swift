@@ -40,6 +40,9 @@ final class AppSettings: ObservableObject {
     @Published var speakHandsFree: Bool {
         didSet { save() }
     }
+    var pushToTalkOnly: Bool { speakEnabled && !speakHandsFree }
+    var autoOpenMeetingMic: Bool { autoMicOnStart && !pushToTalkOnly }
+
     /// Locale of the language I speak.
     @Published var speakFrom: String {
         didSet { save() }

@@ -105,7 +105,7 @@ struct SpeechServiceSettingsView: View {
             return
         }
         if (draft.soniox && !settings.speechServices.soniox) || (draft.elevenLabs && !settings.speechServices.elevenLabs) {
-            settings.speakHandsFree = false
+            model.setHandsFree(false)
         }
         settings.speechServices = draft
         model.applyAIService()

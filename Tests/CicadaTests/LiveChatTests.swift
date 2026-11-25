@@ -4,6 +4,23 @@ import Testing
 @testable import Cicada
 
 struct LiveChatTests {
+    @MainActor @Test func pushToTalkOverridesTheSavedAutoOpenMicrophoneChoice() throws {
+        let suite = "cicada-press-only-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.autoMicOnStart = true
+        settings.speakEnabled = true
+        settings.speakHandsFree = false
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.pushToTalkOnly && !reopened.autoOpenMeetingMic)
+        reopened.speakHandsFree = true
+        #expect(!reopened.pushToTalkOnly && reopened.autoOpenMeetingMic)
+        reopened.speakHandsFree = false
+        reopened.speakEnabled = false
+        #expect(!reopened.pushToTalkOnly && reopened.autoOpenMeetingMic)
+    }
+
     @Test func micAndComputerKeepTheirOwnSideEvenWhenTheySpeakTheSameLanguage() {
         let inputs = [MeetingInput(microphone: true, personal: true),
                       MeetingInput(microphone: false, personal: true),
