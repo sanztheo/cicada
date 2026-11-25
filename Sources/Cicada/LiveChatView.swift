@@ -156,9 +156,9 @@ private struct LiveChatBubble: View {
                     Text(verbatim: original).font(.system(size: 12)).foregroundStyle(.white.opacity(0.86))
                 }
                 if message.waitingForWords {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 15, weight: .semibold))
+                    SoundBars(height: 15)
                         .frame(width: 30, height: 19)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel(Text("你正在说…"))
                 } else {
                     Text(verbatim: primary).font(.system(size: 16))

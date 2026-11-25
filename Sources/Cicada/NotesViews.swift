@@ -1438,7 +1438,7 @@ struct NotesListeningView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 12) {
-                SoundBars()
+                SoundBars().foregroundStyle(Palette.accent).accessibilityHidden(true)
                 Text("有人开口后，约半分钟出第一版").font(.system(size: 13)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 0)
                 if heard > 0 {
@@ -1485,22 +1485,23 @@ struct NotesListeningView: View {
     }
 }
 
-/// Four small orange bars rising and falling: "listening", at the size of a line of text.
+/// Listening indicator, animated independently of microphone volume.
 struct SoundBars: View {
     var height: CGFloat = 22
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { ctx in
+            let date = reduceMotion ? Date(timeIntervalSinceReferenceDate: 0) : ctx.date
             HStack(spacing: 3) {
                 ForEach(0..<4, id: \.self) { i in
-                    let p = phase(ctx.date, period: 1.1, delay: Double(i) * 0.15)
-                    Capsule().fill(Palette.accent).frame(width: 3, height: height)
-                        .scaleEffect(x: 1, y: 0.3 + 0.7 * (0.5 - 0.5 * cos(p * 2 * .pi)))
+                    let progress = phase(date, period: 1.1, delay: Double(i) * 0.15)
+                    Capsule().frame(width: 3, height: height)
+                        .scaleEffect(x: 1, y: 0.3 + 0.7 * (0.5 - 0.5 * cos(progress * 2 * .pi)))
                 }
             }
         }
         .frame(height: height)
-        .accessibilityHidden(true)
     }
 }
 
